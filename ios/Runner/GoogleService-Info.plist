@@ -6,9 +6,31 @@
 	<string>782208796750-g35qpti1fddarssf9is1gv391n33of23.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
 	<string>com.googleusercontent.apps.782208796750-g35qpti1fddarssf9is1gv391n33of23</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>782208796750-0kobhc601tgm4ovc0rjpju0b7qcon46u.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBpfWF1eEFhoMptbwXakU3SN2CHq6Q6IFk</string>
+	<key>GCM_SENDER_ID</key>
+	<string>782208796750</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.example.expenses</string>
+	<key>PROJECT_ID</key>
+	<string>expensify-505418</string>
+	<key>STORAGE_BUCKET</key>
+	<string>expensify-505418.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:782208796750:ios:79a6e38b3fc7ad8e941b1f</string>
 </dict>
 </plist>

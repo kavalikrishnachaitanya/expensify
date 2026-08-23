@@ -5,31 +5,53 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'package:firebase_auth/firebase_auth.dart';
+
 /// A custom HTTP client that injects Google Sign-In auth headers.
 class GoogleDriveService {
-  late final GoogleSignIn _googleSignIn;
-
-  GoogleDriveService() {
-    _googleSignIn = GoogleSignIn(
-      clientId: kIsWeb
-          ? dotenv.env['WEB_CLIENT_ID']
-          : dotenv.env['IOS_CLIENT_ID'],
-      scopes: [drive.DriveApi.driveAppdataScope],
-    );
-  }
+  GoogleDriveService();
 
   GoogleSignInAccount? _currentUser;
+  GoogleSignInClientAuthorization? _authorization;
   drive.DriveApi? _driveApi;
   static const String _backupFileName = 'expenditure_backup.json';
 
   GoogleSignInAccount? get currentUser => _currentUser;
 
+  /// Helper to initialize GoogleSignIn singleton
+  Future<void> _ensureInitialized() async {
+    await GoogleSignIn.instance.initialize(
+      clientId: kIsWeb
+          ? dotenv.env['WEB_CLIENT_ID']
+          : dotenv.env['IOS_CLIENT_ID'],
+    );
+  }
+
+  /// Sync Google account with Firebase Auth
+  Future<void> _syncWithFirebaseAuth() async {
+    if (_currentUser == null) return;
+    try {
+      final GoogleSignInAuthentication googleAuth = _currentUser!.authentication;
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+        accessToken: null,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+    } catch (e) {
+      debugPrint('Firebase auto-sync from Expensify login failed: $e');
+    }
+  }
+
   /// Sign in silently if previously authenticated.
   Future<bool> signInSilently() async {
     try {
-      _currentUser = await _googleSignIn.signInSilently();
+      await _ensureInitialized();
+      _currentUser = await GoogleSignIn.instance.attemptLightweightAuthentication();
       if (_currentUser != null) {
-        await _initDriveApi();
+        final List<String> scopes = [drive.DriveApi.driveAppdataScope];
+        _authorization = await _currentUser!.authorizationClient.authorizeScopes(scopes);
+        await _initDriveApi(scopes);
+        await _syncWithFirebaseAuth();
         return true;
       }
     } catch (e) {
@@ -41,9 +63,13 @@ class GoogleDriveService {
   /// Interactive sign-in.
   Future<bool> signIn() async {
     try {
-      _currentUser = await _googleSignIn.signIn();
+      await _ensureInitialized();
+      _currentUser = await GoogleSignIn.instance.authenticate();
       if (_currentUser != null) {
-        await _initDriveApi();
+        final List<String> scopes = [drive.DriveApi.driveAppdataScope];
+        _authorization = await _currentUser!.authorizationClient.authorizeScopes(scopes);
+        await _initDriveApi(scopes);
+        await _syncWithFirebaseAuth();
         return true;
       }
     } catch (e) {
@@ -54,19 +80,21 @@ class GoogleDriveService {
 
   /// Sign out.
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    await GoogleSignIn.instance.signOut();
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
     _currentUser = null;
+    _authorization = null;
     _driveApi = null;
   }
 
   /// Initialize the Drive API with authenticated client.
-  Future<void> _initDriveApi() async {
-    if (_currentUser == null) return;
+  Future<void> _initDriveApi(List<String> scopes) async {
+    if (_authorization == null) return;
     
-    final client = await _googleSignIn.authenticatedClient();
-    if (client != null) {
-      _driveApi = drive.DriveApi(client);
-    }
+    final client = _authorization!.authClient(scopes: scopes);
+    _driveApi = drive.DriveApi(client);
   }
 
   /// Fetch the remote backup file metadata (ID).

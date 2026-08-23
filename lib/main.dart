@@ -11,8 +11,29 @@ import 'settings_screen.dart';
 import 'login_screen.dart';
 import 'services/google_drive_service.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:provider/provider.dart';
+import 'splitwise/providers/auth_provider.dart' as split_auth;
+import 'splitwise/providers/group_provider.dart' as split_group;
+import 'splitwise/providers/expense_provider.dart' as split_expense;
+import 'splitwise/screens/home/home_screen.dart' as split_home;
+import 'splitwise/screens/groups/create_group_screen.dart' as split_create_group;
+import 'splitwise/widgets/user_avatar.dart';
+
+bool isFirebaseInitialized = false;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    isFirebaseInitialized = true;
+  } catch (e) {
+    debugPrint("Firebase initialization error: $e");
+    isFirebaseInitialized = false;
+  }
   await dotenv.load(fileName: ".env");
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -39,7 +60,7 @@ class _ExpenditureAppState extends State<ExpenditureApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    final materialApp = MaterialApp(
       title: 'Expenditure Calculator & Tracker',
       debugShowCheckedModeBanner: false,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
@@ -67,6 +88,19 @@ class _ExpenditureAppState extends State<ExpenditureApp> {
         isDarkMode: _isDarkMode,
         onToggleTheme: _toggleTheme,
       ),
+    );
+
+    if (!isFirebaseInitialized) {
+      return materialApp;
+    }
+
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => split_auth.AuthProvider()),
+        ChangeNotifierProvider(create: (_) => split_group.GroupProvider()),
+        ChangeNotifierProvider(create: (_) => split_expense.ExpenseProvider()),
+      ],
+      child: materialApp,
     );
   }
 }
@@ -603,6 +637,7 @@ class _MainScreenState extends State<MainScreen> {
                 onAddGoal: _addVaultGoal,
                 onDeleteGoal: _deleteVaultGoal,
               ),
+              _buildSplitTab(),
             ],
           );
         }
@@ -636,68 +671,86 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.only(right: 16.0, left: 8.0),
                 child: GestureDetector(
                   onTap: _openSettingsScreen,
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    foregroundColor: theme.colorScheme.onPrimaryContainer,
-                    child: Text(
-                      _userName.isNotEmpty ? _userName[0].toUpperCase() : '?',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
+                  child: Consumer<split_auth.AuthProvider>(
+                    builder: (context, auth, _) {
+                      final photoUrl = auth.userModel?.photoUrl ?? auth.user?.photoURL;
+                      final displayName = auth.userModel?.displayName ?? _userName;
+                      return UserAvatar(
+                        photoUrl: photoUrl,
+                        displayName: displayName.isNotEmpty ? displayName : '?',
+                        radius: 16,
+                      );
+                    },
                   ),
                 ),
               ),
             ],
           ),
           body: bodyContent,
-          floatingActionButton: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (_isFabOpen) ...[
-                FloatingActionButton.extended(
-                  heroTag: 'income_fab',
+          floatingActionButton: _selectedTabIndex == 3
+              ? FloatingActionButton.extended(
+                  heroTag: 'split_create_group_fab',
                   onPressed: () {
-                    setState(() => _isFabOpen = false);
-                    _openAddIncomeModal();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const split_create_group.CreateGroupScreen(),
+                      ),
+                    );
                   },
-                  backgroundColor: const Color(0xFF1DD1A1),
-                  foregroundColor: Colors.white,
-                  icon: const Icon(Icons.account_balance_wallet_rounded),
-                  label: const Text('Add Income', style: TextStyle(fontWeight: FontWeight.bold)),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  icon: const Icon(Icons.group_add_rounded),
+                  label: const Text('New Group', style: TextStyle(fontWeight: FontWeight.bold)),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (_isFabOpen) ...[
+                      FloatingActionButton.extended(
+                        heroTag: 'income_fab',
+                        onPressed: () {
+                          setState(() => _isFabOpen = false);
+                          _openAddIncomeModal();
+                        },
+                        backgroundColor: const Color(0xFF1DD1A1),
+                        foregroundColor: Colors.white,
+                        icon: const Icon(Icons.account_balance_wallet_rounded),
+                        label: const Text('Add Income', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(height: 16),
+                      FloatingActionButton.extended(
+                        heroTag: 'expense_fab',
+                        onPressed: () {
+                          setState(() => _isFabOpen = false);
+                          _openAddExpenseModal();
+                        },
+                        backgroundColor: const Color(0xFFFF6B6B),
+                        foregroundColor: Colors.white,
+                        icon: const Icon(Icons.money_off_rounded),
+                        label: const Text('Add Expense', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    FloatingActionButton(
+                      heroTag: 'main_fab',
+                      onPressed: () {
+                        setState(() {
+                          _isFabOpen = !_isFabOpen;
+                        });
+                      },
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      elevation: 4,
+                      child: AnimatedRotation(
+                        turns: _isFabOpen ? 0.125 : 0, // Rotates 45 degrees to look like an "X"
+                        duration: const Duration(milliseconds: 200),
+                        child: const Icon(Icons.add_rounded, size: 28),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                FloatingActionButton.extended(
-                  heroTag: 'expense_fab',
-                  onPressed: () {
-                    setState(() => _isFabOpen = false);
-                    _openAddExpenseModal();
-                  },
-                  backgroundColor: const Color(0xFFFF6B6B),
-                  foregroundColor: Colors.white,
-                  icon: const Icon(Icons.money_off_rounded),
-                  label: const Text('Add Expense', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 16),
-              ],
-              FloatingActionButton(
-                heroTag: 'main_fab',
-                onPressed: () {
-                  setState(() {
-                    _isFabOpen = !_isFabOpen;
-                  });
-                },
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                elevation: 4,
-                child: AnimatedRotation(
-                  turns: _isFabOpen ? 0.125 : 0, // Rotates 45 degrees to look like an "X"
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(Icons.add_rounded, size: 28),
-                ),
-              ),
-            ],
-          ),
           bottomNavigationBar: isWideScreen ? null : NavigationBar(
             selectedIndex: _selectedTabIndex,
             onDestinationSelected: (idx) {
@@ -720,6 +773,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icon(Icons.savings_outlined),
                 selectedIcon: Icon(Icons.savings_rounded),
                 label: 'Vault',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.group_outlined),
+                selectedIcon: Icon(Icons.group_rounded),
+                label: 'Split',
               ),
             ],
           ),
@@ -1532,7 +1590,72 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // ----------------------------------------------------
-  // TAB 4: CATEGORIES & MONTHLY INCOME SETTINGS
-
+  Widget _buildSplitTab() {
+    if (!isFirebaseInitialized) {
+      final theme = Theme.of(context);
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cloud_off_rounded, size: 64, color: theme.colorScheme.primary),
+              const SizedBox(height: 16),
+              Text(
+                'Firebase Setup Required',
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'To use the Splitwise feature, please restart the app after setting up your Firebase config.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Consumer<split_auth.AuthProvider>(
+      builder: (context, authProvider, child) {
+        final theme = Theme.of(context);
+        if (authProvider.isLoading) {
+          return Center(
+            child: CircularProgressIndicator(color: theme.colorScheme.primary),
+          );
+        }
+        if (!authProvider.isAuthenticated) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.sync_rounded, size: 56, color: theme.colorScheme.primary),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Connecting Splitwise',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Linking with your active Google account...',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: () => authProvider.signInWithGoogle(),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Connect Now'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return const split_home.HomeScreen();
+      },
+    );
+  }
 }
