@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:expenses/models.dart';
 import 'package:expenses/splitwise/models/group_model.dart';
 import 'package:expenses/splitwise/models/user_model.dart';
 import 'package:expenses/splitwise/providers/auth_provider.dart';
@@ -11,11 +12,27 @@ import 'package:expenses/splitwise/widgets/expense_tile.dart';
 import 'package:expenses/splitwise/widgets/balance_summary.dart';
 import 'package:expenses/splitwise/screens/expenses/add_expense_screen.dart';
 import 'package:expenses/splitwise/widgets/user_avatar.dart';
+import 'package:expenses/add_expense_sheet.dart';
+import 'package:expenses/sample_data.dart';
+import 'package:expenses/widgets/custom_modal_dialog.dart';
 
 class GroupDetailScreen extends StatefulWidget {
   final GroupModel group;
+  final Function(Expense)? onAddPersonalExpense;
+  final Function(String)? onDeletePersonalExpense;
+  final Function(String, double)? onAddIncomeRecord;
+  final List<Expense>? personalExpenses;
+  final List<ExpenseCategory>? categories;
 
-  const GroupDetailScreen({super.key, required this.group});
+  const GroupDetailScreen({
+    super.key,
+    required this.group,
+    this.onAddPersonalExpense,
+    this.onDeletePersonalExpense,
+    this.onAddIncomeRecord,
+    this.personalExpenses,
+    this.categories,
+  });
 
   @override
   State<GroupDetailScreen> createState() => _GroupDetailScreenState();
@@ -54,62 +71,90 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Member'),
-        content: TextField(
-          controller: emailController,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            labelText: 'Email',
-            hintText: 'Enter member email',
-            border: OutlineInputBorder(),
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return CustomModalDialog(
+          icon: Icons.person_add_alt_1_rounded,
+          iconColor: theme.colorScheme.primary,
+          iconBackgroundColor: theme.colorScheme.primaryContainer,
+          title: 'Add Member',
+          subtitle: 'Invite to ${widget.group.name}',
+          content: TextField(
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Enter email address',
+              hintStyle: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              prefixIcon: const Icon(Icons.email_outlined, size: 18),
+              filled: true,
+              fillColor: theme.colorScheme.surfaceContainerHigh,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 1.5,
+                ),
+              ),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (emailController.text.trim().isNotEmpty) {
-                final groupProvider = context.read<GroupProvider>();
-                final messenger = ScaffoldMessenger.of(context);
-                final navigator = Navigator.of(dialogContext);
-                final errorColor = Theme.of(context).colorScheme.error;
+          primaryButtonText: 'Add',
+          onPrimaryPressed: () async {
+            if (emailController.text.trim().isNotEmpty) {
+              final groupProvider = context.read<GroupProvider>();
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(dialogContext);
+              final errorColor = Theme.of(context).colorScheme.error;
 
-                final success = await groupProvider.addMemberByEmail(
-                  widget.group.id,
-                  emailController.text.trim(),
-                );
+              final errorMsg = await groupProvider.addMemberByEmail(
+                widget.group.id,
+                emailController.text.trim(),
+              );
 
-                navigator.pop();
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? 'Member added successfully!'
-                          : groupProvider.error ?? 'Failed to add member',
-                    ),
-                    backgroundColor: success ? null : errorColor,
+              navigator.pop();
+              messenger.clearSnackBars();
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    errorMsg ?? 'Member added successfully!',
                   ),
-                );
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+                  backgroundColor: errorMsg == null ? null : errorColor,
+                ),
+              );
+            }
+          },
+        );
+      },
     );
   }
 
   void _showMembersDialog(GroupModel group, String? currentUserId, ColorScheme colorScheme) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Group Members'),
-        content: SizedBox(
-          width: double.maxFinite,
+      builder: (dialogCtx) => CustomModalDialog(
+        icon: Icons.group_rounded,
+        iconColor: colorScheme.primary,
+        iconBackgroundColor: colorScheme.primaryContainer,
+        title: 'Group Members',
+        subtitle: '${group.memberIds.length} members in ${group.name}',
+        content: Container(
+          constraints: const BoxConstraints(maxHeight: 280),
           child: ListView.separated(
             shrinkWrap: true,
             itemCount: group.memberIds.length,
@@ -125,7 +170,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   final user = snapshot.data;
                   final email = user?.email ?? 'Loading...';
                   final displayName = user?.displayName ?? memberName;
-                  
+
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: UserAvatar(
@@ -164,20 +209,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('Remove Member'),
-                                  content: Text('Are you sure you want to remove $displayName?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    FilledButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
-                                      child: const Text('Remove'),
-                                    ),
-                                  ],
+                                builder: (ctx) => CustomModalDialog(
+                                  icon: Icons.person_remove_rounded,
+                                  iconColor: colorScheme.error,
+                                  iconBackgroundColor: colorScheme.errorContainer,
+                                  title: 'Remove Member',
+                                  subtitle: 'Remove $displayName?',
+                                  primaryButtonText: 'Remove',
+                                  primaryButtonColor: colorScheme.error,
+                                  onPrimaryPressed: () => Navigator.pop(ctx, true),
                                 ),
                               );
 
@@ -186,7 +226,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                                     .read<GroupProvider>()
                                     .removeMember(group.id, memberId);
                                 if (success && context.mounted) {
-                                  Navigator.pop(context); // Close members dialog
+                                  Navigator.pop(dialogCtx); // Close members dialog
+                                  ScaffoldMessenger.of(context).clearSnackBars();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('Member removed successfully')),
                                   );
@@ -201,12 +242,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             },
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+        secondaryButtonText: 'Close',
+        onSecondaryPressed: () => Navigator.pop(dialogCtx),
       ),
     );
   }
@@ -255,24 +292,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
                     final confirm = await showDialog<bool>(
                       context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Delete Group'),
-                        content: const Text(
-                          'Are you sure you want to delete this group? This action cannot be undone.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: colorScheme.error,
-                            ),
-                            child: const Text('Delete'),
-                          ),
-                        ],
+                      builder: (ctx) => CustomModalDialog(
+                        icon: Icons.delete_forever_rounded,
+                        iconColor: colorScheme.error,
+                        iconBackgroundColor: colorScheme.errorContainer,
+                        title: 'Delete Group',
+                        subtitle: 'Delete "${group.name}"?',
+                        primaryButtonText: 'Delete',
+                        primaryButtonColor: colorScheme.error,
+                        onPrimaryPressed: () => Navigator.pop(ctx, true),
                       ),
                     );
 
@@ -288,24 +316,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
                     final confirm = await showDialog<bool>(
                       context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Leave Group'),
-                        content: const Text(
-                          'Are you sure you want to leave this group?',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: colorScheme.error,
-                            ),
-                            child: const Text('Leave'),
-                          ),
-                        ],
+                      builder: (ctx) => CustomModalDialog(
+                        icon: Icons.exit_to_app_rounded,
+                        iconColor: colorScheme.error,
+                        iconBackgroundColor: colorScheme.errorContainer,
+                        title: 'Leave Group',
+                        subtitle: 'Leave "${group.name}"?',
+                        primaryButtonText: 'Leave',
+                        primaryButtonColor: colorScheme.error,
+                        onPrimaryPressed: () => Navigator.pop(ctx, true),
                       ),
                     );
 
@@ -446,23 +465,41 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           expense: expense,
                           currentUserId: currentUserId ?? '',
                           onDelete: () async {
+                            bool deletePersonalTxn = false;
                             final confirm = await showDialog<bool>(
                               context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Delete Expense'),
-                                content: const Text(
-                                  'Are you sure you want to delete this expense?',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () => Navigator.pop(context, true),
-                                    child: const Text('Delete'),
-                                  ),
-                                ],
+                              builder: (ctx) => StatefulBuilder(
+                                builder: (context, setDialogState) {
+                                  return CustomModalDialog(
+                                    icon: Icons.delete_outline_rounded,
+                                    iconColor: colorScheme.error,
+                                    iconBackgroundColor: colorScheme.errorContainer,
+                                    title: 'Delete Expense',
+                                    subtitle: 'Are you sure you want to delete "${expense.description}"?',
+                                    content: Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: CheckboxListTile(
+                                        value: deletePersonalTxn,
+                                        contentPadding: EdgeInsets.zero,
+                                        controlAffinity: ListTileControlAffinity.leading,
+                                        activeColor: colorScheme.error,
+                                        dense: true,
+                                        title: const Text(
+                                          'Delete linked personal transaction',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                        ),
+                                        onChanged: (val) {
+                                          setDialogState(() {
+                                            deletePersonalTxn = val ?? false;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    primaryButtonText: 'Delete',
+                                    primaryButtonColor: colorScheme.error,
+                                    onPrimaryPressed: () => Navigator.pop(ctx, true),
+                                  );
+                                },
                               ),
                             );
 
@@ -476,9 +513,60 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                               );
 
                               if (success && context.mounted) {
+                                if (deletePersonalTxn &&
+                                    widget.onDeletePersonalExpense != null &&
+                                    widget.personalExpenses != null &&
+                                    widget.personalExpenses!.isNotEmpty) {
+                                  final personal = widget.personalExpenses!;
+                                  final descLower = expense.description.trim().toLowerCase();
+                                  final amount = expense.amount;
+
+                                  // Stage 0: Direct 2-Way ID Matcher
+                                  int matchIndex = personal.indexWhere((e) =>
+                                      (expense.linkedPersonalExpenseId != null && e.id == expense.linkedPersonalExpenseId) ||
+                                      (e.linkedTransactionId != null && e.linkedTransactionId == expense.id));
+
+                                  // Stage 1: Exact Title & Amount Matcher
+                                  if (matchIndex == -1) {
+                                    matchIndex = personal.indexWhere((e) =>
+                                        e.title.trim().toLowerCase() == descLower &&
+                                        (e.amount - amount).abs() < 0.05);
+                                  }
+
+                                  if (matchIndex == -1) {
+                                    matchIndex = personal.indexWhere((e) {
+                                      final t = e.title.trim().toLowerCase();
+                                      return (t.contains(descLower) || descLower.contains(t)) &&
+                                          (e.amount - amount).abs() < 0.05;
+                                    });
+                                  }
+
+                                  if (matchIndex == -1) {
+                                    matchIndex = personal.indexWhere((e) =>
+                                        e.title.trim().toLowerCase() == descLower);
+                                  }
+
+                                  if (matchIndex == -1) {
+                                    matchIndex = personal.indexWhere((e) {
+                                      final t = e.title.trim().toLowerCase();
+                                      final n = (e.note ?? '').trim().toLowerCase();
+                                      return t.contains(descLower) || descLower.contains(t) || n.contains(descLower);
+                                    });
+                                  }
+
+                                  if (matchIndex != -1) {
+                                    widget.onDeletePersonalExpense!(personal[matchIndex].id);
+                                  }
+                                }
+
+                                ScaffoldMessenger.of(context).clearSnackBars();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Expense deleted successfully'),
+                                  SnackBar(
+                                    content: Text(
+                                      deletePersonalTxn
+                                          ? 'Group expense & linked personal transaction deleted'
+                                          : 'Expense deleted successfully from Splitwise',
+                                    ),
                                   ),
                                 );
                               }
@@ -494,34 +582,175 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               // Balances Tab
               Consumer<ExpenseProvider>(
                 builder: (context, expenseProvider, child) {
-                    return BalanceSummary(
-                      balances: expenseProvider.balances,
-                      settlements: expenseProvider.settlements,
-                      memberNames: group.memberNames,
-                      currentUserId: currentUserId ?? '',
-                      groupId: group.id,
-                      expenses: expenseProvider.expenses,
-                    );
+                      return BalanceSummary(
+                        balances: expenseProvider.balances,
+                        settlements: expenseProvider.settlements,
+                        memberNames: group.memberNames,
+                        currentUserId: currentUserId ?? '',
+                        groupId: group.id,
+                        expenses: expenseProvider.expenses,
+                        onAddPersonalExpense: widget.onAddPersonalExpense,
+                        onAddIncomeRecord: widget.onAddIncomeRecord,
+                      );
+                  },
+                ),
+              ],
+            ),
+            floatingActionButton: _tabController.index == 0
+                ? FloatingActionButton.extended(
+                    onPressed: _showAddExpenseChoiceModal,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Expense'),
+                  )
+                : null,
+          );
+        },
+      );
+    }
+
+  void _showAddExpenseChoiceModal() {
+    final theme = Theme.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalCtx) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Add Group Expense',
+              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Choose how you want to add this expense to ${widget.group.name}:',
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+
+            // Option 1: Create New Expense
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.primary,
+                  child: const Icon(Icons.add_rounded, color: Colors.white),
+                ),
+                title: const Text('Create New Expense', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Add new & sync to personal log'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(modalCtx);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (sheetCtx) => AddExpenseSheet(
+                      categories: widget.categories ?? getInitialCategories(),
+                      currencySymbol: '₹',
+                      onAddExpense: (newExpense) {
+                        // Pass pending newExpense to AddExpenseScreen
+                        // Personal transaction will ONLY be saved when Save Group Expense is confirmed!
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AddExpenseScreen(
+                              group: widget.group,
+                              pendingPersonalExpense: newExpense,
+                              onAddPersonalExpense: widget.onAddPersonalExpense,
+                              personalExpenses: widget.personalExpenses,
+                              categories: widget.categories,
+                              isImported: false,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
                 },
               ),
-            ],
-          ),
-          floatingActionButton: _tabController.index == 0
-              ? FloatingActionButton.extended(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AddExpenseScreen(group: group),
-                      ),
+            ),
+            const SizedBox(height: 12),
+
+            // Option 2: Import from Personal Transactions
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                  child: Icon(Icons.receipt_long_rounded, color: theme.colorScheme.onSecondaryContainer),
+                ),
+                title: const Text('Import Transaction', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Split an existing transaction'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(modalCtx);
+                  if (widget.personalExpenses == null || widget.personalExpenses!.isEmpty) {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No personal transactions available to import.')),
                     );
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Expense'),
-                )
-              : null,
-        );
-      },
+                    return;
+                  }
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: theme.scaffoldBackgroundColor,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    builder: (importCtx) {
+                      return TransactionPickerModal(
+                        allExpenses: widget.personalExpenses!,
+                        onSelectTransaction: (exp) {
+                          Navigator.pop(importCtx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AddExpenseScreen(
+                                group: widget.group,
+                                initialDescription: exp.title,
+                                initialAmount: exp.amount,
+                                onAddPersonalExpense: widget.onAddPersonalExpense,
+                                personalExpenses: widget.personalExpenses,
+                                categories: widget.categories,
+                                isImported: true,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 }

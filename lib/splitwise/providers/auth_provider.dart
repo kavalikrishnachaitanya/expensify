@@ -157,32 +157,50 @@ class AuthProvider with ChangeNotifier {
     _error = null;
 
     try {
-      if (_user == null) throw Exception('No user signed in');
+      if (_user != null) {
+        try {
+          await _user!.updateDisplayName(displayName);
+        } catch (_) {}
 
-      // Update Firebase Auth user
-      await _user!.updateDisplayName(displayName);
-      if (photoUrl != null) await _user!.updatePhotoURL(photoUrl);
-
-      // Update Firestore user
-      final data = <String, dynamic>{
-        'displayName': displayName,
-      };
-      if (photoUrl != null) {
-        data['photoUrl'] = photoUrl;
+        if (photoUrl != null && (photoUrl.startsWith('http://') || photoUrl.startsWith('https://'))) {
+          try {
+            await _user!.updatePhotoURL(photoUrl);
+          } catch (e) {
+            debugPrint('Firebase Auth updatePhotoURL skipped non-HTTP URL: $e');
+          }
+        }
       }
 
-      await _firestoreService.updateUser(_user!.uid, data);
+      // Update Firestore user document
+      if (_user != null) {
+        final data = <String, dynamic>{
+          'displayName': displayName,
+        };
+        if (photoUrl != null) {
+          data['photoUrl'] = photoUrl;
+        }
+        await _firestoreService.updateUser(_user!.uid, data);
+      }
 
-      // Reload user
-      await _user!.reload();
-      _user = _authService.currentUser;
-      _userModel = await _firestoreService.getUser(_user!.uid);
+      // Update in-memory UserModel immediately so state notifies listeners
+      if (_userModel != null) {
+        _userModel = UserModel(
+          uid: _userModel!.uid,
+          email: _userModel!.email,
+          displayName: displayName,
+          photoUrl: photoUrl ?? _userModel!.photoUrl,
+          createdAt: _userModel!.createdAt,
+        );
+      }
 
       _setLoading(false);
+      notifyListeners();
       return true;
     } catch (e) {
+      debugPrint('updateProfile error: $e');
       _error = e.toString();
       _setLoading(false);
+      notifyListeners();
       return false;
     }
   }

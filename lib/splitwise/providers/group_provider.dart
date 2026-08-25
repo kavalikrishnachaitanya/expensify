@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:expenses/splitwise/models/group_model.dart';
 import 'package:expenses/splitwise/models/user_model.dart';
 import 'package:expenses/splitwise/services/firestore_service.dart';
+import 'package:expenses/utils/id_generator.dart';
 import 'dart:async';
 
 /// Provider for group management
@@ -42,17 +43,32 @@ class GroupProvider with ChangeNotifier {
     String? description,
     required String userId,
     required String userName,
+    List<String>? initialMemberNames,
   }) async {
     _setLoading(true);
     _error = null;
 
     try {
+      final memberIds = <String>[userId];
+      final memberNamesMap = <String, String>{userId: userName};
+
+      if (initialMemberNames != null) {
+        for (int i = 0; i < initialMemberNames.length; i++) {
+          final mName = initialMemberNames[i].trim();
+          if (mName.isNotEmpty) {
+            final mId = IdGenerator.generate('mbr');
+            memberIds.add(mId);
+            memberNamesMap[mId] = mName;
+          }
+        }
+      }
+
       final group = GroupModel(
         id: '',
         name: name,
         description: description,
-        memberIds: [userId],
-        memberNames: {userId: userName},
+        memberIds: memberIds,
+        memberNames: memberNamesMap,
         createdBy: userId,
         createdAt: DateTime.now(),
       );
@@ -73,24 +89,21 @@ class GroupProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add member to group by email
-  Future<bool> addMemberByEmail(String groupId, String email) async {
+  /// Add member to group by email. Returns null on success, or error message string on failure.
+  Future<String?> addMemberByEmail(String groupId, String email) async {
     _setLoading(true);
-    _error = null;
 
     try {
       final user = await _firestoreService.getUserByEmail(email);
       if (user == null) {
-        _error = 'User not found with that email';
         _setLoading(false);
-        return false;
+        return 'User not found with that email';
       }
 
       // Check if already a member
       if (_selectedGroup?.memberIds.contains(user.uid) ?? false) {
-        _error = 'User is already a member of this group';
         _setLoading(false);
-        return false;
+        return 'User is already a member of this group';
       }
 
       await _firestoreService.addMemberToGroup(
@@ -106,11 +119,10 @@ class GroupProvider with ChangeNotifier {
       }
 
       _setLoading(false);
-      return true;
+      return null; // Success!
     } catch (e) {
-      _error = e.toString();
       _setLoading(false);
-      return false;
+      return e.toString();
     }
   }
 

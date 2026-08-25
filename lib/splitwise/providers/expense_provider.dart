@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:expenses/splitwise/models/expense_model.dart';
 import 'package:expenses/splitwise/services/firestore_service.dart';
+import 'package:expenses/utils/id_generator.dart';
 import 'dart:async';
 
 /// Provider for expense management
@@ -70,10 +71,12 @@ class ExpenseProvider with ChangeNotifier {
     required double amount,
     required String paidBy,
     required String paidByName,
+    String? paidByPhotoUrl,
     required List<String> splitAmongIds,
     required Map<String, String> memberNames,
     required List<String> groupMemberIds,
     bool isSettlement = false,
+    String? linkedPersonalExpenseId,
   }) async {
     _setLoading(true);
     _error = null;
@@ -85,7 +88,7 @@ class ExpenseProvider with ChangeNotifier {
       splitAmong[userId] = splitAmount;
     }
 
-    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+    final tempId = IdGenerator.generateExpenseId();
     final expense = ExpenseModel(
       id: tempId, // Temporary ID
       groupId: groupId,
@@ -93,9 +96,11 @@ class ExpenseProvider with ChangeNotifier {
       amount: amount,
       paidBy: paidBy,
       paidByName: paidByName,
+      paidByPhotoUrl: paidByPhotoUrl,
       splitAmong: splitAmong,
       createdAt: DateTime.now(),
       isSettlement: isSettlement,
+      linkedPersonalExpenseId: linkedPersonalExpenseId,
     );
 
     // Optimistic Update: Add locally first

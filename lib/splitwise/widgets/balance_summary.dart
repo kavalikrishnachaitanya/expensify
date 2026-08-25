@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:expenses/splitwise/utils/helpers.dart';
+import 'package:expenses/utils/id_generator.dart';
 import 'package:expenses/splitwise/providers/expense_provider.dart';
 import 'package:expenses/splitwise/providers/group_provider.dart';
 import 'package:expenses/splitwise/models/user_model.dart';
 import 'package:expenses/splitwise/models/expense_model.dart';
 import 'package:expenses/splitwise/widgets/user_avatar.dart';
 import 'package:expenses/splitwise/widgets/settlement_card.dart';
+import 'package:expenses/widgets/custom_modal_dialog.dart';
+
+import 'package:expenses/models.dart';
 
 /// Widget for displaying balance summary and settlements
 class BalanceSummary extends StatelessWidget {
@@ -16,6 +20,8 @@ class BalanceSummary extends StatelessWidget {
   final String currentUserId;
   final String groupId;
   final List<ExpenseModel> expenses;
+  final Function(Expense)? onAddPersonalExpense;
+  final Function(String, double)? onAddIncomeRecord;
 
   const BalanceSummary({
     super.key,
@@ -25,6 +31,8 @@ class BalanceSummary extends StatelessWidget {
     required this.currentUserId,
     required this.groupId,
     required this.expenses,
+    this.onAddPersonalExpense,
+    this.onAddIncomeRecord,
   });
 
   @override
@@ -172,21 +180,15 @@ class BalanceSummary extends StatelessWidget {
 
                   final confirm = await showDialog<bool>(
                     context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Settle Debt'),
-                      content: Text(
-                        'Mark this debt of ${Helpers.formatCurrency(amount)} as paid?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Confirm'),
-                        ),
-                      ],
+                    builder: (ctx) => CustomModalDialog(
+                      icon: Icons.check_circle_rounded,
+                      iconColor: const Color(0xFF1DD1A1),
+                      iconBackgroundColor: const Color(0xFF1DD1A1).withValues(alpha: 0.15),
+                      title: 'Settle Debt',
+                      subtitle: 'Mark payment of ${Helpers.formatCurrency(amount)} from ${memberNames[fromId] ?? "Payer"} to ${memberNames[toId] ?? "Receiver"} as paid?',
+                      primaryButtonText: 'Confirm Settlement',
+                      primaryButtonColor: const Color(0xFF1DD1A1),
+                      onPrimaryPressed: () => Navigator.pop(ctx, true),
                     ),
                   );
 
@@ -204,10 +206,40 @@ class BalanceSummary extends StatelessWidget {
                       groupMemberIds: memberNames.keys.toList(),
                       isSettlement: true,
                     );
+
+                    // Automatically sync settlement to personal ledger!
+                    if (fromId == currentUserId && onAddPersonalExpense != null) {
+                      // You paid the settlement -> log as Personal Expense
+                      final personalExpense = Expense(
+                        id: IdGenerator.generateExpenseId(),
+                        title: 'Settlement to ${memberNames[toId] ?? "Member"}',
+                        amount: amount,
+                        date: DateTime.now(),
+                        categoryId: 'cat_bills',
+                        paymentMethod: PaymentMethod.upi,
+                        note: 'Splitwise balance settlement paid',
+                      );
+                      onAddPersonalExpense!(personalExpense);
+                    } else if (toId == currentUserId && onAddIncomeRecord != null) {
+                      // You received the settlement -> log as Income Record
+                      onAddIncomeRecord!(
+                        'Settlement from ${memberNames[fromId] ?? "Member"}',
+                        amount,
+                      );
+                    }
                     
                     if (context.mounted) {
+                      ScaffoldMessenger.of(context).clearSnackBars();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Settlement recorded successfully!')),
+                        SnackBar(
+                          content: Text(
+                            fromId == currentUserId
+                                ? 'Settlement recorded & added to your personal transactions!'
+                                : toId == currentUserId
+                                    ? 'Settlement recorded & added to your income!'
+                                    : 'Settlement recorded successfully!',
+                          ),
+                        ),
                       );
                     }
                   }
