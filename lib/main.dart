@@ -5,7 +5,9 @@ import 'models.dart';
 import 'sample_data.dart';
 import 'charts.dart';
 import 'add_expense_sheet.dart';
+import 'add_income_sheet.dart';
 import 'savings_vault_view.dart';
+import 'utils/id_generator.dart';
 import 'dart:convert';
 import 'settings_screen.dart';
 import 'login_screen.dart';
@@ -19,7 +21,7 @@ import 'splitwise/providers/group_provider.dart' as split_group;
 import 'splitwise/providers/expense_provider.dart' as split_expense;
 import 'splitwise/screens/home/home_screen.dart' as split_home;
 import 'splitwise/screens/groups/create_group_screen.dart' as split_create_group;
-import 'splitwise/widgets/user_avatar.dart';
+import 'splitwise/screens/expenses/add_expense_screen.dart';
 
 bool isFirebaseInitialized = false;
 
@@ -42,65 +44,65 @@ void main() async {
   runApp(const ExpenditureApp());
 }
 
-class ExpenditureApp extends StatefulWidget {
+class ThemeProvider with ChangeNotifier {
+  bool _isDarkMode = true;
+  bool get isDarkMode => _isDarkMode;
+
+  void toggleTheme() {
+    _isDarkMode = !_isDarkMode;
+    notifyListeners();
+  }
+}
+
+class ExpenditureApp extends StatelessWidget {
   const ExpenditureApp({super.key});
 
   @override
-  State<ExpenditureApp> createState() => _ExpenditureAppState();
-}
-
-class _ExpenditureAppState extends State<ExpenditureApp> {
-  bool _isDarkMode = true;
-
-  void _toggleTheme() {
-    setState(() {
-      _isDarkMode = !_isDarkMode;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final materialApp = MaterialApp(
-      title: 'Expenditure Calculator & Tracker',
-      debugShowCheckedModeBanner: false,
-      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C5CE7),
-          brightness: Brightness.light,
-        ),
-        fontFamily: 'Roboto',
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C5CE7),
-          brightness: Brightness.dark,
-          surface: const Color(0xFF12141C),
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0D0E15),
-        fontFamily: 'Roboto',
-      ),
-      home: LoginScreen(
-        isDarkMode: _isDarkMode,
-        onToggleTheme: _toggleTheme,
-      ),
-    );
-
-    if (!isFirebaseInitialized) {
-      return materialApp;
-    }
-
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => split_auth.AuthProvider()),
-        ChangeNotifierProvider(create: (_) => split_group.GroupProvider()),
-        ChangeNotifierProvider(create: (_) => split_expense.ExpenseProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        if (isFirebaseInitialized) ...[
+          ChangeNotifierProvider(create: (_) => split_auth.AuthProvider()),
+          ChangeNotifierProvider(create: (_) => split_group.GroupProvider()),
+          ChangeNotifierProvider(create: (_) => split_expense.ExpenseProvider()),
+        ],
       ],
-      child: materialApp,
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return MaterialApp(
+            title: 'Expenditure Calculator & Tracker',
+            debugShowCheckedModeBanner: false,
+            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            theme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.light,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF6C5CE7),
+                brightness: Brightness.light,
+                surface: Colors.white,
+              ),
+              scaffoldBackgroundColor: const Color(0xFFF6F7FC),
+              fontFamily: 'Roboto',
+            ),
+            darkTheme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.dark,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF6C5CE7),
+                brightness: Brightness.dark,
+                surface: const Color(0xFF12141C),
+              ),
+              scaffoldBackgroundColor: const Color(0xFF0D0E15),
+              fontFamily: 'Roboto',
+            ),
+            home: LoginScreen(
+              isDarkMode: themeProvider.isDarkMode,
+              onToggleTheme: themeProvider.toggleTheme,
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -109,12 +111,14 @@ class MainScreen extends StatefulWidget {
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
   final GoogleDriveService driveService;
+  final bool isGuestMode;
 
   const MainScreen({
     super.key,
     required this.isDarkMode,
     required this.onToggleTheme,
     required this.driveService,
+    this.isGuestMode = false,
   });
 
   @override
@@ -154,7 +158,7 @@ class _MainScreenState extends State<MainScreen> {
       _savingsHistory.insert(
         0,
         SavingsRecord(
-          id: 'sav_${DateTime.now().millisecondsSinceEpoch}',
+          id: IdGenerator.generateVaultId(),
           date: DateTime.now(),
           amount: amount,
           type: type,
@@ -256,7 +260,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       _monthlyIncomeMap[key]!.add(
         IncomeRecord(
-          id: sharedId != null ? 'inc_$sharedId' : 'inc_${DateTime.now().millisecondsSinceEpoch}',
+          id: sharedId != null ? 'inc_$sharedId' : IdGenerator.generateIncomeId(),
           sourceName: sourceName,
           amount: amount,
           date: DateTime.now(),
@@ -281,6 +285,7 @@ class _MainScreenState extends State<MainScreen> {
       _expenses.removeWhere((e) => e.id == id);
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Expense deleted')),
     );
@@ -308,6 +313,7 @@ class _MainScreenState extends State<MainScreen> {
       }
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Income deleted')),
     );
@@ -330,6 +336,7 @@ class _MainScreenState extends State<MainScreen> {
       }
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Vault transaction deleted')),
     );
@@ -340,6 +347,7 @@ class _MainScreenState extends State<MainScreen> {
       _vaultGoals.add(goal);
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Vault goal created')),
     );
@@ -350,6 +358,7 @@ class _MainScreenState extends State<MainScreen> {
       _vaultGoals.removeWhere((g) => g.id == id);
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Vault goal deleted')),
     );
@@ -360,6 +369,7 @@ class _MainScreenState extends State<MainScreen> {
       _categories.add(newCategory);
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Category "${newCategory.name}" added')),
     );
@@ -367,6 +377,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _deleteCategory(String id) {
     if (id == 'cat_misc') {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cannot delete the Miscellaneous category')),
       );
@@ -381,6 +392,7 @@ class _MainScreenState extends State<MainScreen> {
       _categories.removeWhere((c) => c.id == id);
     });
     _syncToDrive();
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Category deleted. Associated expenses moved to Miscellaneous.')),
     );
@@ -400,58 +412,21 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _openAddIncomeModal() {
-    final nameController = TextEditingController();
-    final amountController = TextEditingController();
     final monthTitle = '${_getMonthName(_selectedDate.month)} ${_selectedDate.year}';
-
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Add Income for $monthTitle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Source Name (e.g. Salary, Bonus)',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                prefixText: _currencySymbol,
-                border: const OutlineInputBorder(),
-                labelText: 'Amount',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final val = double.tryParse(amountController.text);
-              if (name.isNotEmpty && val != null && val != 0) {
-                _addIncomeRecord(name, val);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Income added for $monthTitle')),
-                );
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: const Text('Add Income'),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AddIncomeSheet(
+        currencySymbol: _currencySymbol,
+        monthTitle: monthTitle,
+        onAddIncome: (name, val) {
+          _addIncomeRecord(name, val);
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Income added for $monthTitle')),
+          );
+        },
       ),
     );
   }
@@ -474,9 +449,10 @@ class _MainScreenState extends State<MainScreen> {
           expenses: _expenses,
           onAddCategory: _addCategory,
           onDeleteCategory: _deleteCategory,
-          isDarkMode: widget.isDarkMode,
+          isDarkMode: Theme.of(context).brightness == Brightness.dark,
           onToggleTheme: widget.onToggleTheme,
           driveService: widget.driveService,
+          isGuestMode: widget.isGuestMode,
         ),
       ),
     );
@@ -568,6 +544,11 @@ class _MainScreenState extends State<MainScreen> {
     final monthIncome = _currentMonthIncome;
     final monthlyTotal = _monthlyTotalSpent;
     final netSavings = monthIncome - monthlyTotal;
+
+    split_auth.AuthProvider? authProvider;
+    try {
+      authProvider = context.watch<split_auth.AuthProvider>();
+    } catch (_) {}
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -667,42 +648,28 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16.0, left: 8.0),
-                child: GestureDetector(
-                  onTap: _openSettingsScreen,
-                  child: Consumer<split_auth.AuthProvider>(
-                    builder: (context, auth, _) {
-                      final photoUrl = auth.userModel?.photoUrl ?? auth.user?.photoURL;
-                      final displayName = auth.userModel?.displayName ?? _userName;
-                      return UserAvatar(
-                        photoUrl: photoUrl,
-                        displayName: displayName.isNotEmpty ? displayName : '?',
-                        radius: 16,
-                      );
-                    },
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.settings_rounded),
+                onPressed: _openSettingsScreen,
+                tooltip: 'Settings',
               ),
+              const SizedBox(width: 4),
             ],
           ),
           body: bodyContent,
           floatingActionButton: _selectedTabIndex == 3
-              ? FloatingActionButton.extended(
-                  heroTag: 'split_create_group_fab',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const split_create_group.CreateGroupScreen(),
-                      ),
-                    );
-                  },
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                  icon: const Icon(Icons.group_add_rounded),
-                  label: const Text('New Group', style: TextStyle(fontWeight: FontWeight.bold)),
-                )
+              ? (authProvider?.isAuthenticated == true && !widget.isGuestMode
+                  ? FloatingActionButton.extended(
+                      heroTag: 'split_create_group_fab',
+                      onPressed: () {
+                        split_create_group.showCreateGroupSheet(context);
+                      },
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      icon: const Icon(Icons.group_add_rounded),
+                      label: const Text('New Group', style: TextStyle(fontWeight: FontWeight.bold)),
+                    )
+                  : null)
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -1154,10 +1121,15 @@ class _MainScreenState extends State<MainScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  cs.category.name,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                Expanded(
+                                  child: Text(
+                                    cs.category.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 Text(
                                   '$_currencySymbol${cs.totalAmount.toStringAsFixed(2)}',
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
@@ -1242,6 +1214,15 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           actions: [
+            if (!isIncome && isFirebaseInitialized)
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _openSplitGroupForExpense(item as Expense);
+                },
+                icon: const Icon(Icons.call_split_rounded, size: 16),
+                label: const Text('Split in Group'),
+              ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Close'),
@@ -1249,6 +1230,72 @@ class _MainScreenState extends State<MainScreen> {
           ],
         );
       }
+    );
+  }
+
+  /// Open group selection modal to redirect an existing personal transaction into Splitwise
+  void _openSplitGroupForExpense(Expense expense) {
+    final groupProvider = context.read<split_group.GroupProvider>();
+    if (groupProvider.groups.isEmpty) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No Splitwise groups found. Please create or join a group first!'),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select Group to Split Transaction',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Splitting "${expense.title}" ($_currencySymbol${expense.amount.toStringAsFixed(2)})',
+              style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            ...groupProvider.groups.map((group) => ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Theme.of(ctx).colorScheme.primaryContainer,
+                    child: Icon(Icons.group_rounded, color: Theme.of(ctx).colorScheme.primary),
+                  ),
+                  title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('${group.memberIds.length} members'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddExpenseScreen(
+                          group: group,
+                          initialDescription: expense.title,
+                          initialAmount: expense.amount,
+                          onAddPersonalExpense: _addExpense,
+                          personalExpenses: _expenses,
+                          categories: _categories,
+                        ),
+                      ),
+                    );
+                  },
+                )),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1626,36 +1673,147 @@ class _MainScreenState extends State<MainScreen> {
         }
         if (!authProvider.isAuthenticated) {
           return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(28.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.sync_rounded, size: 56, color: theme.colorScheme.primary),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Connecting Splitwise',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.groups_rounded,
+                      size: 56,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
                   Text(
-                    'Linking with your active Google account...',
+                    'Unlock Splitwise & Group Expenses',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: () => authProvider.signInWithGoogle(),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Connect Now'),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Connect your Google Account to split bills with friends, track balances, and sync data securely.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  // Feature Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildFeatureRow(
+                          context,
+                          icon: Icons.group_add_rounded,
+                          title: 'Group Expense Splitting',
+                          subtitle: 'Split rent, dinners, and trips with friends',
+                        ),
+                        const Divider(height: 20),
+                        _buildFeatureRow(
+                          context,
+                          icon: Icons.account_balance_rounded,
+                          title: 'Smart Settlement Algorithm',
+                          subtitle: 'Automatically minimize transactions to settle dues',
+                        ),
+                        const Divider(height: 20),
+                        _buildFeatureRow(
+                          context,
+                          icon: Icons.cloud_sync_rounded,
+                          title: 'Google Drive Sync',
+                          subtitle: 'Automatic encrypted backup to your private Drive',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        final success = await widget.driveService.signIn();
+                        if (success) {
+                          authProvider.signInWithGoogle();
+                        }
+                      },
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('Sign in with Google'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           );
         }
-        return const split_home.HomeScreen();
+        return split_home.HomeScreen(
+          onAddPersonalExpense: _addExpense,
+          onDeletePersonalExpense: _deleteExpense,
+          onAddIncomeRecord: _addIncomeRecord,
+          personalExpenses: _expenses,
+          categories: _categories,
+        );
       },
+    );
+  }
+
+  Widget _buildFeatureRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: theme.colorScheme.primary, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

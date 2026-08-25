@@ -15,6 +15,7 @@ class GoogleDriveService {
   GoogleSignInClientAuthorization? _authorization;
   drive.DriveApi? _driveApi;
   static const String _backupFileName = 'expenditure_backup.json';
+  static const String _avatarFileName = 'profile_avatar.txt';
 
   GoogleSignInAccount? get currentUser => _currentUser;
 
@@ -31,12 +32,14 @@ class GoogleDriveService {
   Future<void> _syncWithFirebaseAuth() async {
     if (_currentUser == null) return;
     try {
-      final GoogleSignInAuthentication googleAuth = _currentUser!.authentication;
+      final googleAuth = _currentUser!.authentication;
+      final accessToken = _authorization?.accessToken;
       final credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
-        accessToken: null,
+        accessToken: accessToken,
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
+      debugPrint('Successfully auto-synced Google user with Firebase Auth!');
     } catch (e) {
       debugPrint('Firebase auto-sync from Expensify login failed: $e');
     }
@@ -67,7 +70,9 @@ class GoogleDriveService {
       _currentUser = await GoogleSignIn.instance.authenticate();
       if (_currentUser != null) {
         final List<String> scopes = [drive.DriveApi.driveAppdataScope];
-        _authorization = await _currentUser!.authorizationClient.authorizeScopes(scopes);
+        try {
+          _authorization = await _currentUser!.authorizationClient.authorizeScopes(scopes);
+        } catch (_) {}
         await _initDriveApi(scopes);
         await _syncWithFirebaseAuth();
         return true;
@@ -97,14 +102,14 @@ class GoogleDriveService {
     _driveApi = drive.DriveApi(client);
   }
 
-  /// Fetch the remote backup file metadata (ID).
-  Future<String?> _getBackupFileId() async {
+  /// Fetch the remote file metadata (ID) by filename.
+  Future<String?> _getFileId(String fileName) async {
     if (_driveApi == null) return null;
 
     try {
       final fileList = await _driveApi!.files.list(
         spaces: 'appDataFolder',
-        q: "name = '$_backupFileName'",
+        q: "name = '$fileName'",
         $fields: 'files(id, name)',
       );
 
@@ -113,7 +118,7 @@ class GoogleDriveService {
         return files.first.id;
       }
     } catch (e) {
-      debugPrint('Error getting backup file ID: $e');
+      debugPrint('Error getting file ID for $fileName: $e');
     }
     return null;
   }
@@ -123,21 +128,19 @@ class GoogleDriveService {
     if (_driveApi == null) return false;
 
     try {
-      final fileId = await _getBackupFileId();
+      final fileId = await _getFileId(_backupFileName);
       final content = utf8.encode(jsonString);
       final media = drive.Media(Stream.value(content), content.length);
 
       final driveFile = drive.File()..name = _backupFileName;
 
       if (fileId != null) {
-        // Update existing file
         await _driveApi!.files.update(
           driveFile,
           fileId,
           uploadMedia: media,
         );
       } else {
-        // Create new file
         driveFile.parents = ['appDataFolder'];
         await _driveApi!.files.create(
           driveFile,
@@ -156,7 +159,7 @@ class GoogleDriveService {
     if (_driveApi == null) return null;
 
     try {
-      final fileId = await _getBackupFileId();
+      final fileId = await _getFileId(_backupFileName);
       if (fileId == null) return null;
 
       final response = await _driveApi!.files.get(
@@ -169,6 +172,74 @@ class GoogleDriveService {
     } catch (e) {
       debugPrint('Download failed: $e');
       return null;
+    }
+  }
+
+  /// Backup profile avatar string/base64 to appDataFolder on Google Drive
+  Future<bool> uploadAvatarData(String avatarStr) async {
+    if (_driveApi == null) return false;
+    try {
+      final fileId = await _getFileId(_avatarFileName);
+      final content = utf8.encode(avatarStr);
+      final media = drive.Media(Stream.value(content), content.length);
+
+      final driveFile = drive.File()..name = _avatarFileName;
+
+      if (fileId != null) {
+        await _driveApi!.files.update(driveFile, fileId, uploadMedia: media);
+      } else {
+        driveFile.parents = ['appDataFolder'];
+        await _driveApi!.files.create(driveFile, uploadMedia: media);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Avatar upload to Drive failed: $e');
+      return false;
+    }
+  }
+
+  /// Download cached profile avatar from Google Drive
+  Future<String?> downloadAvatarData() async {
+    if (_driveApi == null) return null;
+    try {
+      final fileId = await _getFileId(_avatarFileName);
+      if (fileId == null) return null;
+
+      final response = await _driveApi!.files.get(
+        fileId,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      ) as drive.Media;
+
+      final bytes = await response.stream.expand((e) => e).toList();
+      return utf8.decode(bytes);
+    } catch (e) {
+      debugPrint('Avatar download from Drive failed: $e');
+      return null;
+    }
+  }
+
+  /// Delete ALL backup data & files from appDataFolder in Google Drive
+  Future<bool> deleteAllData() async {
+    if (_driveApi == null) return false;
+
+    try {
+      final fileList = await _driveApi!.files.list(
+        spaces: 'appDataFolder',
+        $fields: 'files(id, name)',
+      );
+
+      final files = fileList.files;
+      if (files != null && files.isNotEmpty) {
+        for (var file in files) {
+          if (file.id != null) {
+            await _driveApi!.files.delete(file.id!);
+          }
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error clearing Drive backup data: $e');
+      return false;
     }
   }
 }

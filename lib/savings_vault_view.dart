@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'models.dart';
+import 'utils/id_generator.dart';
 
 class SavingsVaultView extends StatefulWidget {
   final double totalSavings;
@@ -65,6 +67,9 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
             TextField(
               controller: _amountController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+              ],
               autofocus: true,
               decoration: InputDecoration(
                 prefixText: widget.currencySymbol,
@@ -144,6 +149,9 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
                         child: TextField(
                           controller: amountController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                          ],
                           style: TextStyle(
                             fontSize: 28, 
                             fontWeight: FontWeight.bold,
@@ -187,7 +195,7 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
                 ElevatedButton(
                   onPressed: () {
                     if (selectedAmount > 0) {
-                      final sharedId = DateTime.now().millisecondsSinceEpoch.toString();
+                      final sharedId = IdGenerator.generate('shr');
                       if (isSurplus) {
                         widget.onAddTransaction(selectedAmount, SavingsTransactionType.surplusMove, 'Surplus from ${widget.currentMonthName}', monthKey: widget.currentMonthKey, sharedId: sharedId);
                         widget.onAdjustIncome(-selectedAmount, sharedId); // Decrease income to balance
@@ -668,6 +676,9 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
             TextField(
               controller: amountController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+              ],
               decoration: InputDecoration(
                 prefixText: widget.currencySymbol,
                 border: const OutlineInputBorder(),
@@ -688,7 +699,7 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
               if (name.isNotEmpty && amount != null && amount > 0) {
                 widget.onAddGoal(
                   VaultGoal(
-                    id: 'goal_${DateTime.now().millisecondsSinceEpoch}',
+                    id: IdGenerator.generate('goal'),
                     name: name,
                     targetAmount: amount,
                     icon: Icons.flag_rounded,

@@ -147,6 +147,7 @@ class Expense {
   final String categoryId;
   final PaymentMethod paymentMethod;
   final String? note;
+  final String? linkedTransactionId;
 
   Expense({
     required this.id,
@@ -156,6 +157,7 @@ class Expense {
     required this.categoryId,
     this.paymentMethod = PaymentMethod.creditCard,
     this.note,
+    this.linkedTransactionId,
   });
 
   Expense copyWith({
@@ -166,6 +168,7 @@ class Expense {
     String? categoryId,
     PaymentMethod? paymentMethod,
     String? note,
+    String? linkedTransactionId,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -175,6 +178,7 @@ class Expense {
       categoryId: categoryId ?? this.categoryId,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       note: note ?? this.note,
+      linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
     );
   }
 
@@ -186,6 +190,7 @@ class Expense {
         'categoryId': categoryId,
         'paymentMethod': paymentMethod.name,
         'note': note,
+        'linkedTransactionId': linkedTransactionId,
       };
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
@@ -196,6 +201,7 @@ class Expense {
         categoryId: json['categoryId'],
         paymentMethod: PaymentMethod.values.firstWhere((e) => e.name == json['paymentMethod']),
         note: json['note'],
+        linkedTransactionId: json['linkedTransactionId'],
       );
 }
 
