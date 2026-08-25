@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'models.dart';
+import 'package:expenses/widgets/custom_modal_dialog.dart';
+import 'utils/id_generator.dart';
 
 class AddCategoryDialog extends StatefulWidget {
   final Function(ExpenseCategory) onAddCategory;
@@ -15,6 +17,7 @@ class AddCategoryDialog extends StatefulWidget {
 
 class _AddCategoryDialogState extends State<AddCategoryDialog> {
   final _nameController = TextEditingController();
+  String? _errorMessage;
 
   static const List<IconData> _availableIcons = [
     Icons.fastfood_rounded,
@@ -69,14 +72,14 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
   void _submit() {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter category name')),
-      );
+      setState(() {
+        _errorMessage = 'Please enter a category name';
+      });
       return;
     }
 
     final newCat = ExpenseCategory(
-      id: 'cat_custom_${DateTime.now().millisecondsSinceEpoch}',
+      id: IdGenerator.generateCategoryId(),
       name: name,
       icon: _selectedIcon,
       color: _selectedColor,
@@ -90,9 +93,12 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return AlertDialog(
-      title: const Text('Add Custom Category', style: TextStyle(fontWeight: FontWeight.bold)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    return CustomModalDialog(
+      icon: _selectedIcon,
+      iconColor: _selectedColor,
+      iconBackgroundColor: _selectedColor.withValues(alpha: 0.2),
+      title: 'Add Custom Category',
+      subtitle: 'Pick an icon, color, and name for your new category',
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -104,14 +110,44 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                 labelText: 'Category Name',
                 hintText: 'e.g. Subscriptions, Gaming, Books',
                 prefixIcon: const Icon(Icons.label_outline_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHigh,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
               ),
+              onChanged: (_) {
+                if (_errorMessage != null) setState(() => _errorMessage = null);
+              },
             ),
-            const SizedBox(height: 20),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded, size: 16, color: theme.colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onErrorContainer, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             Text('Select Icon', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             SizedBox(
-              height: 120,
+              height: 110,
               width: double.maxFinite,
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -132,7 +168,7 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                     },
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isSelected ? _selectedColor.withAlpha(50) : theme.colorScheme.surfaceContainerHigh,
+                        color: isSelected ? _selectedColor.withValues(alpha: 0.2) : theme.colorScheme.surfaceContainerHigh,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: isSelected ? _selectedColor : Colors.transparent,
@@ -142,7 +178,7 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                       child: Icon(
                         icon,
                         color: isSelected ? _selectedColor : theme.colorScheme.onSurfaceVariant,
-                        size: 22,
+                        size: 20,
                       ),
                     ),
                   );
@@ -151,13 +187,12 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
             ),
             const SizedBox(height: 16),
             Text('Select Color', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Wrap(
-              spacing: 10,
-              runSpacing: 10,
+              spacing: 8,
+              runSpacing: 8,
               children: _availableColors.map((color) {
                 final isSelected = color == _selectedColor;
-
                 return GestureDetector(
                   onTap: () {
                     setState(() {
@@ -172,11 +207,11 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: isSelected ? theme.colorScheme.onSurface : Colors.transparent,
-                        width: 2.5,
+                        width: 2,
                       ),
                     ),
                     child: isSelected
-                        ? const Icon(Icons.check, size: 18, color: Colors.white)
+                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
                         : null,
                   ),
                 );
@@ -185,21 +220,9 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _selectedColor,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: const Text('Create Category'),
-        ),
-      ],
+      primaryButtonText: 'Create Category',
+      primaryButtonColor: _selectedColor,
+      onPrimaryPressed: _submit,
     );
   }
 }

@@ -101,48 +101,57 @@ class _PieChartWidgetState extends State<PieChartWidget> with SingleTickerProvid
                 });
               },
               borderRadius: BorderRadius.circular(20),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isHovered
-                      ? item.category.color.withAlpha(50)
-                      : Theme.of(context).colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isHovered ? item.category.color : Colors.transparent,
-                    width: 1.5,
-                  ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width - 64,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: item.category.color,
-                        shape: BoxShape.circle,
-                      ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isHovered
+                        ? item.category.color.withAlpha(50)
+                        : Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isHovered ? item.category.color : Colors.transparent,
+                      width: 1.5,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      item.category.name,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isHovered ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: item.category.color,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${item.percentage.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          item.category.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isHovered ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Text(
+                        '${item.percentage.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

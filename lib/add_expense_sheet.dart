@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'utils/id_generator.dart';
 import 'models.dart';
 
 class AddExpenseSheet extends StatefulWidget {
@@ -21,6 +23,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   final _titleController = TextEditingController();
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
+  String? _errorMessage;
 
   late String _selectedCategoryId;
   PaymentMethod _selectedPaymentMethod = PaymentMethod.creditCard;
@@ -44,22 +47,22 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     final titleText = _titleController.text.trim();
     final amount = double.tryParse(_amountController.text.trim());
 
-    if (titleText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter an expense title')),
-      );
+    if (amount == null || amount <= 0) {
+      setState(() {
+        _errorMessage = 'Please enter a valid amount (> 0)';
+      });
       return;
     }
 
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid amount (> 0)')),
-      );
+    if (titleText.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter an expense title';
+      });
       return;
     }
 
     final newExpense = Expense(
-      id: 'exp_${DateTime.now().millisecondsSinceEpoch}',
+      id: IdGenerator.generateExpenseId(),
       title: titleText,
       amount: amount,
       date: _selectedDate,
@@ -68,8 +71,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
     );
 
-    widget.onAddExpense(newExpense);
     Navigator.of(context).pop();
+    widget.onAddExpense(newExpense);
   }
 
   Future<void> _pickDate() async {
@@ -137,9 +140,15 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withAlpha(80),
+                color: (_errorMessage != null && (double.tryParse(_amountController.text.trim()) == null || double.tryParse(_amountController.text.trim())! <= 0))
+                    ? theme.colorScheme.errorContainer.withValues(alpha: 0.3)
+                    : theme.colorScheme.primaryContainer.withAlpha(80),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: theme.colorScheme.primary.withAlpha(100)),
+                border: Border.all(
+                  color: (_errorMessage != null && (double.tryParse(_amountController.text.trim()) == null || double.tryParse(_amountController.text.trim())! <= 0))
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.primary.withAlpha(100),
+                ),
               ),
               child: Row(
                 children: [
@@ -156,6 +165,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     child: TextField(
                       controller: _amountController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                      ],
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -165,6 +177,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                         hintText: '0.00',
                         border: InputBorder.none,
                       ),
+                      onChanged: (_) {
+                        if (_errorMessage != null) setState(() => _errorMessage = null);
+                      },
                     ),
                   ),
                 ],
@@ -175,12 +190,17 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             // Title Input
             TextField(
               controller: _titleController,
+              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 labelText: 'Expense Title',
                 hintText: 'e.g. Dinner, Coffee, Gas bill',
                 prefixIcon: const Icon(Icons.edit_note_rounded),
+                errorText: _errorMessage != null && _titleController.text.trim().isEmpty ? 'Expense title is required' : null,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              onChanged: (_) {
+                if (_errorMessage != null) setState(() => _errorMessage = null);
+              },
             ),
             const SizedBox(height: 20),
 
@@ -327,8 +347,33 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                 prefixIcon: const Icon(Icons.notes_rounded),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              onChanged: (_) {
+                if (_errorMessage != null) setState(() => _errorMessage = null);
+              },
             ),
-            const SizedBox(height: 24),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded, size: 18, color: theme.colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(fontSize: 13, color: theme.colorScheme.onErrorContainer, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
 
             // Save Button
             SizedBox(
