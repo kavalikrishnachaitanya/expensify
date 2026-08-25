@@ -87,18 +87,26 @@ class AuthService {
   /// Sign in with Google
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      // Initialize GoogleSignIn
+      // If FirebaseAuth is ALREADY signed in (e.g. via GoogleDriveService), reuse active session!
+      if (_auth.currentUser != null) {
+        final userDoc = await _firestore.collection('users').doc(_auth.currentUser!.uid).get();
+        if (!userDoc.exists) {
+          await createUserDocument(
+            _auth.currentUser!,
+            _auth.currentUser!.displayName ?? 'User',
+            photoUrl: _auth.currentUser!.photoURL,
+          );
+        }
+        return null;
+      }
+
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
-      
       try {
-        // Ensure initialized (using static future to prevent multiple calls)
         await googleSignInInitialized;
       } catch (e) {
         debugPrint('GoogleSignIn initialization failed or already initialized: $e');
       }
 
-      // Trigger the authentication flow
-      // Use authenticate() instead of signIn() for google_sign_in 7.x
       final googleUser = await googleSignIn.authenticate();
       return _signInWithGoogleAccount(googleUser);
     } on FirebaseAuthException catch (e) {

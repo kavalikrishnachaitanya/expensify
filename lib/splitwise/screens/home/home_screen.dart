@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:expenses/models.dart';
 import 'package:expenses/splitwise/providers/auth_provider.dart';
 import 'package:expenses/splitwise/providers/group_provider.dart';
 import 'package:expenses/splitwise/screens/groups/create_group_screen.dart';
@@ -8,7 +9,20 @@ import 'package:expenses/splitwise/screens/groups/group_detail_screen.dart';
 import 'package:expenses/splitwise/utils/constants.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final Function(Expense)? onAddPersonalExpense;
+  final Function(String)? onDeletePersonalExpense;
+  final Function(String, double)? onAddIncomeRecord;
+  final List<Expense>? personalExpenses;
+  final List<ExpenseCategory>? categories;
+
+  const HomeScreen({
+    super.key,
+    this.onAddPersonalExpense,
+    this.onDeletePersonalExpense,
+    this.onAddIncomeRecord,
+    this.personalExpenses,
+    this.categories,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -23,8 +37,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _loadGroups() {
     final authProvider = context.read<AuthProvider>();
+    final groupProvider = context.read<GroupProvider>();
+    groupProvider.clearError();
     if (authProvider.user != null) {
-      context.read<GroupProvider>().loadUserGroups(authProvider.user!.uid);
+      groupProvider.loadUserGroups(authProvider.user!.uid);
     }
   }
 
@@ -111,7 +127,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => GroupDetailScreen(group: group),
+                      builder: (context) => GroupDetailScreen(
+                        group: group,
+                        onAddPersonalExpense: widget.onAddPersonalExpense,
+                        onDeletePersonalExpense: widget.onDeletePersonalExpense,
+                        onAddIncomeRecord: widget.onAddIncomeRecord,
+                        personalExpenses: widget.personalExpenses,
+                        categories: widget.categories,
+                      ),
                     ),
                   );
                 },
@@ -124,11 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateToCreateGroup(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const CreateGroupScreen(),
-      ),
-    );
+    showCreateGroupSheet(context);
   }
 }

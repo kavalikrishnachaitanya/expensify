@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:expenses/splitwise/models/expense_model.dart';
+import 'package:expenses/splitwise/models/user_model.dart';
+import 'package:expenses/splitwise/providers/group_provider.dart';
 import 'package:expenses/splitwise/utils/helpers.dart';
+import 'package:expenses/splitwise/widgets/user_avatar.dart';
 
-/// Tile widget for displaying an expense
+/// Tile widget for displaying an expense with Payer Avatar
 class ExpenseTile extends StatelessWidget {
   final ExpenseModel expense;
   final String currentUserId;
@@ -26,14 +30,17 @@ class ExpenseTile extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            // Icon
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: colorScheme.secondaryContainer,
-              child: Icon(
-                Icons.receipt_long,
-                color: colorScheme.onSecondaryContainer,
-              ),
+            // Payer UserAvatar with Tap-to-View Zoom
+            FutureBuilder<UserModel?>(
+              future: context.read<GroupProvider>().getUserDetails(expense.paidBy),
+              builder: (context, snapshot) {
+                final payerPhotoUrl = expense.paidByPhotoUrl ?? snapshot.data?.photoUrl;
+                return UserAvatar(
+                  photoUrl: payerPhotoUrl,
+                  displayName: isPaidByMe ? "You" : expense.paidByName,
+                  radius: 22,
+                );
+              },
             ),
             const SizedBox(width: 16),
 
@@ -44,6 +51,8 @@ class ExpenseTile extends StatelessWidget {
                 children: [
                   Text(
                     expense.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -51,6 +60,8 @@ class ExpenseTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '${isPaidByMe ? "You" : expense.paidByName} paid ${Helpers.formatCurrency(expense.amount)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

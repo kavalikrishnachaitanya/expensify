@@ -67,6 +67,8 @@ class GroupCard extends StatelessWidget {
                     children: [
                       Text(
                         group.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
