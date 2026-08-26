@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:expenses/splitwise/models/group_model.dart';
 import 'package:expenses/splitwise/models/user_model.dart';
 import 'package:expenses/splitwise/services/firestore_service.dart';
@@ -20,6 +21,16 @@ class GroupProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  void _safeNotifyListeners() {
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
+  }
+
   /// Load groups for user
   void loadUserGroups(String userId) {
     _groupsSubscription?.cancel();
@@ -28,11 +39,11 @@ class GroupProvider with ChangeNotifier {
       (groups) {
         _groups = groups;
         _error = null; // Clear error on success
-        notifyListeners();
+        _safeNotifyListeners();
       },
       onError: (e) {
         _error = e.toString();
-        notifyListeners();
+        _safeNotifyListeners();
       },
     );
   }
@@ -86,7 +97,7 @@ class GroupProvider with ChangeNotifier {
   /// Select a group
   void selectGroup(GroupModel group) {
     _selectedGroup = group;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Add member to group by email. Returns null on success, or error message string on failure.
@@ -168,8 +179,10 @@ class GroupProvider with ChangeNotifier {
 
   /// Clear error
   void clearError() {
-    _error = null;
-    notifyListeners();
+    if (_error != null) {
+      _error = null;
+      _safeNotifyListeners();
+    }
   }
 
   /// Clear all data (for logout)
@@ -179,7 +192,7 @@ class GroupProvider with ChangeNotifier {
     _selectedGroup = null;
     _error = null;
     _isLoading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Get user details by ID
@@ -189,7 +202,7 @@ class GroupProvider with ChangeNotifier {
 
   void _setLoading(bool value) {
     _isLoading = value;
-    notifyListeners();
+    _safeNotifyListeners();
   }
   
   @override

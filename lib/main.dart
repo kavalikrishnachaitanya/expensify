@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'models.dart';
 import 'sample_data.dart';
@@ -37,10 +38,12 @@ void main() async {
     isFirebaseInitialized = false;
   }
   await dotenv.load(fileName: ".env");
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  if (!kIsWeb) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
   runApp(const ExpenditureApp());
 }
 
@@ -275,7 +278,12 @@ class _MainScreenState extends State<MainScreen> {
 
   void _addExpense(Expense newExpense) {
     setState(() {
-      _expenses.add(newExpense);
+      final index = _expenses.indexWhere((e) => e.id == newExpense.id);
+      if (index != -1) {
+        _expenses[index] = newExpense;
+      } else {
+        _expenses.insert(0, newExpense);
+      }
     });
     _syncToDrive();
   }
@@ -1284,6 +1292,8 @@ class _MainScreenState extends State<MainScreen> {
                           group: group,
                           initialDescription: expense.title,
                           initialAmount: expense.amount,
+                          pendingPersonalExpense: expense,
+                          isImported: true,
                           onAddPersonalExpense: _addExpense,
                           personalExpenses: _expenses,
                           categories: _categories,

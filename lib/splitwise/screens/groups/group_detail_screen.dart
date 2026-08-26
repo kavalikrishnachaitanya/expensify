@@ -518,40 +518,33 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                                     widget.personalExpenses != null &&
                                     widget.personalExpenses!.isNotEmpty) {
                                   final personal = widget.personalExpenses!;
-                                  final descLower = expense.description.trim().toLowerCase();
-                                  final amount = expense.amount;
 
-                                  // Stage 0: Direct 2-Way ID Matcher
+                                  // 1. Direct ID Link (Primary)
                                   int matchIndex = personal.indexWhere((e) =>
                                       (expense.linkedPersonalExpenseId != null && e.id == expense.linkedPersonalExpenseId) ||
                                       (e.linkedTransactionId != null && e.linkedTransactionId == expense.id));
 
-                                  // Stage 1: Exact Title & Amount Matcher
+                                  // 2. Fallback: Cleaned Title Matcher (for older/legacy transactions)
                                   if (matchIndex == -1) {
-                                    matchIndex = personal.indexWhere((e) =>
-                                        e.title.trim().toLowerCase() == descLower &&
-                                        (e.amount - amount).abs() < 0.05);
-                                  }
+                                    String clean(String s) {
+                                      var str = s.trim().toLowerCase();
+                                      if (str.contains(':')) str = str.split(':').last.trim();
+                                      return str;
+                                    }
 
-                                  if (matchIndex == -1) {
+                                    final targetDesc = clean(expense.description);
+
                                     matchIndex = personal.indexWhere((e) {
-                                      final t = e.title.trim().toLowerCase();
-                                      return (t.contains(descLower) || descLower.contains(t)) &&
-                                          (e.amount - amount).abs() < 0.05;
+                                      final t = clean(e.title);
+                                      return t == targetDesc || t.contains(targetDesc) || targetDesc.contains(t);
                                     });
-                                  }
 
-                                  if (matchIndex == -1) {
-                                    matchIndex = personal.indexWhere((e) =>
-                                        e.title.trim().toLowerCase() == descLower);
-                                  }
-
-                                  if (matchIndex == -1) {
-                                    matchIndex = personal.indexWhere((e) {
-                                      final t = e.title.trim().toLowerCase();
-                                      final n = (e.note ?? '').trim().toLowerCase();
-                                      return t.contains(descLower) || descLower.contains(t) || n.contains(descLower);
-                                    });
+                                    if (matchIndex == -1) {
+                                      matchIndex = personal.indexWhere((e) {
+                                        final n = (e.note ?? '').trim().toLowerCase();
+                                        return n.contains(targetDesc);
+                                      });
+                                    }
                                   }
 
                                   if (matchIndex != -1) {
@@ -733,6 +726,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                                 group: widget.group,
                                 initialDescription: exp.title,
                                 initialAmount: exp.amount,
+                                pendingPersonalExpense: exp,
                                 onAddPersonalExpense: widget.onAddPersonalExpense,
                                 personalExpenses: widget.personalExpenses,
                                 categories: widget.categories,

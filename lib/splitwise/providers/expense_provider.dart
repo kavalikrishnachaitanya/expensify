@@ -115,17 +115,7 @@ class ExpenseProvider with ChangeNotifier {
       // Update the ID of the optimistically added expense
       final index = _expenses.indexWhere((e) => e.id == tempId);
       if (index != -1) {
-        _expenses[index] = ExpenseModel(
-          id: expenseId,
-          groupId: groupId,
-          description: description,
-          amount: amount,
-          paidBy: paidBy,
-          paidByName: paidByName,
-          splitAmong: splitAmong,
-          createdAt: expense.createdAt,
-          isSettlement: isSettlement,
-        );
+        _expenses[index] = expense.copyWith(id: expenseId);
       }
 
       _setLoading(false);

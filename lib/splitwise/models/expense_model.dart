@@ -75,6 +75,7 @@ class ExpenseModel {
     Map<String, double>? splitAmong,
     DateTime? createdAt,
     bool? isSettlement,
+    String? linkedPersonalExpenseId,
   }) {
     return ExpenseModel(
       id: id ?? this.id,
@@ -87,6 +88,7 @@ class ExpenseModel {
       splitAmong: splitAmong ?? this.splitAmong,
       createdAt: createdAt ?? this.createdAt,
       isSettlement: isSettlement ?? this.isSettlement,
+      linkedPersonalExpenseId: linkedPersonalExpenseId ?? this.linkedPersonalExpenseId,
     );
   }
 }
