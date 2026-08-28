@@ -562,175 +562,192 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context, constraints) {
         final isWideScreen = constraints.maxWidth >= 800;
 
-        Widget bodyContent;
+        // ── Shared tab content pages ───────────────────────────────────────
+        final List<Widget> tabPages = [
+          _buildAnalyticsTab(theme, isWideScreen),
+          _buildTransactionsTab(theme, isWideScreen: isWideScreen),
+          SavingsVaultView(
+            totalSavings: _totalSavings,
+            savingsHistory: _savingsHistory,
+            currencySymbol: _currencySymbol,
+            onAddTransaction: (amt, type, note, {monthKey, sharedId}) =>
+                _addSavingsTransaction(amt, type, note, monthKey: monthKey, sharedId: sharedId),
+            netSavings: netSavings,
+            currentMonthName: _getMonthName(_selectedDate.month),
+            currentMonthKey: _currentMonthKey,
+            onAdjustIncome: (amount, sharedId) {
+              _addIncomeRecord('Vault Adjustment', amount, sharedId: sharedId);
+            },
+            onDeleteTransaction: _deleteSavingsRecord,
+            vaultGoals: _vaultGoals,
+            onAddGoal: _addVaultGoal,
+            onDeleteGoal: _deleteVaultGoal,
+            isWideScreen: isWideScreen,
+          ),
+          _buildSplitTab(),
+        ];
 
-        if (isWideScreen) {
-          bodyContent = SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left Column
-                Expanded(
-                  child: _buildAnalyticsTab(theme, true),
-                ),
-                const SizedBox(width: 32),
-                // Right Column
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTransactionsTab(theme, isWideScreen: true),
-                      const SizedBox(height: 32),
-                      SavingsVaultView(
-                        totalSavings: _totalSavings,
-                        savingsHistory: _savingsHistory,
-                        currencySymbol: _currencySymbol,
-                        onAddTransaction: (amt, type, note, {monthKey, sharedId}) => _addSavingsTransaction(amt, type, note, monthKey: monthKey, sharedId: sharedId),
-                        netSavings: netSavings,
-                        currentMonthName: _getMonthName(_selectedDate.month),
-                        currentMonthKey: _currentMonthKey,
-                        onAdjustIncome: (amount, sharedId) {
-                          _addIncomeRecord('Vault Adjustment', amount, sharedId: sharedId);
-                        },
-                        onDeleteTransaction: _deleteSavingsRecord,
-                        vaultGoals: _vaultGoals,
-                        onAddGoal: _addVaultGoal,
-                        onDeleteGoal: _deleteVaultGoal,
-                        isWideScreen: true,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
+        // ── FAB (same logic for both wide & narrow) ────────────────────────
+        Widget? fab;
+        if (_selectedTabIndex == 3) {
+          fab = (authProvider?.isAuthenticated == true && !widget.isGuestMode)
+              ? FloatingActionButton.extended(
+                  heroTag: 'split_create_group_fab',
+                  onPressed: () => split_create_group.showCreateGroupSheet(context),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  icon: const Icon(Icons.group_add_rounded),
+                  label: const Text('New Group', style: TextStyle(fontWeight: FontWeight.bold)),
+                )
+              : null;
         } else {
-          bodyContent = IndexedStack(
-            index: _selectedTabIndex,
+          fab = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _buildAnalyticsTab(theme, false),
-              _buildTransactionsTab(theme),
-              SavingsVaultView(
-                totalSavings: _totalSavings,
-                savingsHistory: _savingsHistory,
-                currencySymbol: _currencySymbol,
-                onAddTransaction: (amt, type, note, {monthKey, sharedId}) => _addSavingsTransaction(amt, type, note, monthKey: monthKey, sharedId: sharedId),
-                netSavings: netSavings,
-                currentMonthName: _getMonthName(_selectedDate.month),
-                currentMonthKey: _currentMonthKey,
-                onAdjustIncome: (amount, sharedId) {
-                  _addIncomeRecord('Vault Adjustment', amount, sharedId: sharedId);
-                },
-                onDeleteTransaction: _deleteSavingsRecord,
-                vaultGoals: _vaultGoals,
-                onAddGoal: _addVaultGoal,
-                onDeleteGoal: _deleteVaultGoal,
+              if (_isFabOpen) ...[
+                FloatingActionButton.extended(
+                  heroTag: 'income_fab',
+                  onPressed: () {
+                    setState(() => _isFabOpen = false);
+                    _openAddIncomeModal();
+                  },
+                  backgroundColor: const Color(0xFF1DD1A1),
+                  foregroundColor: Colors.white,
+                  icon: const Icon(Icons.account_balance_wallet_rounded),
+                  label: const Text('Add Income', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 16),
+                FloatingActionButton.extended(
+                  heroTag: 'expense_fab',
+                  onPressed: () {
+                    setState(() => _isFabOpen = false);
+                    _openAddExpenseModal();
+                  },
+                  backgroundColor: const Color(0xFFFF6B6B),
+                  foregroundColor: Colors.white,
+                  icon: const Icon(Icons.money_off_rounded),
+                  label: const Text('Add Expense', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 16),
+              ],
+              FloatingActionButton(
+                heroTag: 'main_fab',
+                onPressed: () => setState(() => _isFabOpen = !_isFabOpen),
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                elevation: 4,
+                child: AnimatedRotation(
+                  turns: _isFabOpen ? 0.125 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.add_rounded, size: 28),
+                ),
               ),
-              _buildSplitTab(),
             ],
           );
         }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
-                    ),
-                    shape: BoxShape.circle,
+        // ── AppBar (shared) ────────────────────────────────────────────────
+        final appBar = AppBar(
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
                   ),
-                  child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 20),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Expensify',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_rounded),
-                onPressed: _openSettingsScreen,
-                tooltip: 'Settings',
+                child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 20),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Expensify',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
-          body: bodyContent,
-          floatingActionButton: _selectedTabIndex == 3
-              ? (authProvider?.isAuthenticated == true && !widget.isGuestMode
-                  ? FloatingActionButton.extended(
-                      heroTag: 'split_create_group_fab',
-                      onPressed: () {
-                        split_create_group.showCreateGroupSheet(context);
-                      },
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      icon: const Icon(Icons.group_add_rounded),
-                      label: const Text('New Group', style: TextStyle(fontWeight: FontWeight.bold)),
-                    )
-                  : null)
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (_isFabOpen) ...[
-                      FloatingActionButton.extended(
-                        heroTag: 'income_fab',
-                        onPressed: () {
-                          setState(() => _isFabOpen = false);
-                          _openAddIncomeModal();
-                        },
-                        backgroundColor: const Color(0xFF1DD1A1),
-                        foregroundColor: Colors.white,
-                        icon: const Icon(Icons.account_balance_wallet_rounded),
-                        label: const Text('Add Income', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(height: 16),
-                      FloatingActionButton.extended(
-                        heroTag: 'expense_fab',
-                        onPressed: () {
-                          setState(() => _isFabOpen = false);
-                          _openAddExpenseModal();
-                        },
-                        backgroundColor: const Color(0xFFFF6B6B),
-                        foregroundColor: Colors.white,
-                        icon: const Icon(Icons.money_off_rounded),
-                        label: const Text('Add Expense', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    FloatingActionButton(
-                      heroTag: 'main_fab',
-                      onPressed: () {
-                        setState(() {
-                          _isFabOpen = !_isFabOpen;
-                        });
-                      },
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      elevation: 4,
-                      child: AnimatedRotation(
-                        turns: _isFabOpen ? 0.125 : 0, // Rotates 45 degrees to look like an "X"
-                        duration: const Duration(milliseconds: 200),
-                        child: const Icon(Icons.add_rounded, size: 28),
-                      ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings_rounded),
+              onPressed: _openSettingsScreen,
+              tooltip: 'Settings',
+            ),
+            const SizedBox(width: 4),
+          ],
+        );
+
+        // ── WIDE / WEB layout: NavigationRail sidebar ──────────────────────
+        if (isWideScreen) {
+          return Scaffold(
+            appBar: appBar,
+            floatingActionButton: fab,
+            body: Row(
+              children: [
+                // Sidebar NavigationRail
+                NavigationRail(
+                  extended: constraints.maxWidth >= 1100,
+                  selectedIndex: _selectedTabIndex,
+                  onDestinationSelected: (idx) {
+                    setState(() {
+                      _selectedTabIndex = idx;
+                      _isFabOpen = false;
+                    });
+                  },
+                  backgroundColor: theme.colorScheme.surfaceContainerLow,
+                  indicatorColor: theme.colorScheme.primaryContainer,
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.pie_chart_outline_rounded),
+                      selectedIcon: Icon(Icons.pie_chart_rounded),
+                      label: Text('Analytics'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.receipt_long_outlined),
+                      selectedIcon: Icon(Icons.receipt_long_rounded),
+                      label: Text('Transactions'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.savings_outlined),
+                      selectedIcon: Icon(Icons.savings_rounded),
+                      label: Text('Vault'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.group_outlined),
+                      selectedIcon: Icon(Icons.group_rounded),
+                      label: Text('Split'),
                     ),
                   ],
                 ),
-          bottomNavigationBar: isWideScreen ? null : NavigationBar(
+                // Vertical divider between rail and content
+                VerticalDivider(thickness: 1, width: 1, color: theme.colorScheme.outlineVariant),
+                // Main content area
+                Expanded(
+                  child: tabPages[_selectedTabIndex],
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ── NARROW / MOBILE layout: bottom NavigationBar ───────────────────
+        return Scaffold(
+          appBar: appBar,
+          floatingActionButton: fab,
+          body: IndexedStack(
+            index: _selectedTabIndex,
+            children: tabPages,
+          ),
+          bottomNavigationBar: NavigationBar(
             selectedIndex: _selectedTabIndex,
             onDestinationSelected: (idx) {
               setState(() {
                 _selectedTabIndex = idx;
+                _isFabOpen = false;
               });
             },
             destinations: const [

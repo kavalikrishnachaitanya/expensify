@@ -18,19 +18,48 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Track expenses privately. Sync securely to your private Google Drive.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="expenses">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Expensify">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>expenses</title>
+  <title>Expensify Tracker</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Google Sign-In Web Client ID
+    Required by the google_sign_in Flutter package for OAuth redirect on web.
+    This is the public OAuth client ID (safe to include in HTML).
+  -->
+  <meta name="google-signin-client_id"
+        content="782208796750-ls2nionehe4m6gkkv8p574ce430g9ipe.apps.googleusercontent.com">
+
+  <!--
+    Firebase JS SDK - Required for Firebase Auth & Google Sign-In redirect flow on web.
+    The Flutter firebase_core & firebase_auth packages need these loaded before Flutter boots.
+  -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+  <script>
+    // Initialize Firebase for web (matches firebase_options.dart web config)
+    const firebaseConfig = {
+      apiKey: "AIzaSyAlT_f5fxrCSbGoMoI4NhmazPaIfW9Ceoo",
+      authDomain: "expensify-505418.firebaseapp.com",
+      projectId: "expensify-505418",
+      storageBucket: "expensify-505418.firebasestorage.app",
+      messagingSenderId: "782208796750",
+      appId: "1:782208796750:web:fad9f3ff51730a9b941b1f"
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
 </head>
 <body>
   <!--

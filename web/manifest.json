@@ -1,12 +1,11 @@
 {
-    "name": "expenses",
-    "short_name": "expenses",
+    "name": "Expensify Tracker",
+    "short_name": "Expensify",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#0D0E15",
+    "theme_color": "#6C5CE7",
+    "description": "Track expenses privately. Sync securely to your private Google Drive.",
     "prefer_related_applications": false,
     "icons": [
         {
