@@ -55,3 +55,9 @@ app.*.map.json
 .env*
 *.secret
 credentials.json
+
+# Firebase client config files
+**/google-services.json
+**/GoogleService-Info.plist
+lib/firebase_options.dart
+firebase_options.dart
