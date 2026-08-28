@@ -19,7 +19,7 @@ import 'package:expenses/widgets/custom_modal_dialog.dart';
 class GroupDetailScreen extends StatefulWidget {
   final GroupModel group;
   final Function(Expense)? onAddPersonalExpense;
-  final Function(String)? onDeletePersonalExpense;
+  final void Function(String, {String? linkedSplitwiseId, String? matchDescription, double? matchAmount})? onDeletePersonalExpense;
   final Function(String, double)? onAddIncomeRecord;
   final List<Expense>? personalExpenses;
   final List<ExpenseCategory>? categories;
@@ -397,7 +397,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               // Expenses Tab
               Consumer<ExpenseProvider>(
                 builder: (context, expenseProvider, child) {
-                  if (expenseProvider.error != null) {
+                  if (expenseProvider.error != null && expenseProvider.expenses.isEmpty) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -465,7 +465,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           expense: expense,
                           currentUserId: currentUserId ?? '',
                           onDelete: () async {
-                            bool deletePersonalTxn = false;
+                            bool deletePersonalTxn = true;
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (ctx) => StatefulBuilder(
@@ -504,6 +504,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             );
 
                             if (confirm == true) {
+                              if (deletePersonalTxn && widget.onDeletePersonalExpense != null) {
+                                widget.onDeletePersonalExpense!(
+                                  expense.linkedPersonalExpenseId ?? '',
+                                  linkedSplitwiseId: expense.id,
+                                  matchDescription: expense.description,
+                                  matchAmount: expense.amount,
+                                );
+                              }
+
                               final success = await expenseProvider.deleteExpense(
                                 expenseId: expense.id,
                                 groupId: group.id,
@@ -513,45 +522,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                               );
 
                               if (success && context.mounted) {
-                                if (deletePersonalTxn &&
-                                    widget.onDeletePersonalExpense != null &&
-                                    widget.personalExpenses != null &&
-                                    widget.personalExpenses!.isNotEmpty) {
-                                  final personal = widget.personalExpenses!;
-
-                                  // 1. Direct ID Link (Primary)
-                                  int matchIndex = personal.indexWhere((e) =>
-                                      (expense.linkedPersonalExpenseId != null && e.id == expense.linkedPersonalExpenseId) ||
-                                      (e.linkedTransactionId != null && e.linkedTransactionId == expense.id));
-
-                                  // 2. Fallback: Cleaned Title Matcher (for older/legacy transactions)
-                                  if (matchIndex == -1) {
-                                    String clean(String s) {
-                                      var str = s.trim().toLowerCase();
-                                      if (str.contains(':')) str = str.split(':').last.trim();
-                                      return str;
-                                    }
-
-                                    final targetDesc = clean(expense.description);
-
-                                    matchIndex = personal.indexWhere((e) {
-                                      final t = clean(e.title);
-                                      return t == targetDesc || t.contains(targetDesc) || targetDesc.contains(t);
-                                    });
-
-                                    if (matchIndex == -1) {
-                                      matchIndex = personal.indexWhere((e) {
-                                        final n = (e.note ?? '').trim().toLowerCase();
-                                        return n.contains(targetDesc);
-                                      });
-                                    }
-                                  }
-
-                                  if (matchIndex != -1) {
-                                    widget.onDeletePersonalExpense!(personal[matchIndex].id);
-                                  }
-                                }
-
                                 ScaffoldMessenger.of(context).clearSnackBars();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(

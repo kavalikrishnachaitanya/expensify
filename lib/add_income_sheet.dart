@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'models.dart';
 
 class AddIncomeSheet extends StatefulWidget {
   final String currencySymbol;
   final String monthTitle;
-  final Function(String sourceName, double amount) onAddIncome;
+  final DateTime? initialDate;
+  final IncomeRecord? incomeToEdit;
+  final Function(String sourceName, double amount, DateTime date) onAddIncome;
 
   const AddIncomeSheet({
     super.key,
     required this.currencySymbol,
     required this.monthTitle,
+    this.initialDate,
+    this.incomeToEdit,
     required this.onAddIncome,
   });
 
@@ -20,13 +26,59 @@ class AddIncomeSheet extends StatefulWidget {
 class _AddIncomeSheetState extends State<AddIncomeSheet> {
   final _nameController = TextEditingController();
   final _amountController = TextEditingController();
+  late DateTime _selectedDate;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.incomeToEdit != null) {
+      final inc = widget.incomeToEdit!;
+      _nameController.text = inc.sourceName;
+      _amountController.text = inc.amount.toStringAsFixed(2);
+      _selectedDate = inc.date;
+    } else {
+      _selectedDate = widget.initialDate ?? DateTime.now();
+    }
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _amountController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 10),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+                  primary: const Color(0xFF1DD1A1),
+                ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+        );
+      });
+    }
   }
 
   void _submit() {
@@ -48,7 +100,7 @@ class _AddIncomeSheetState extends State<AddIncomeSheet> {
     }
 
     Navigator.of(context).pop();
-    widget.onAddIncome(name, val);
+    widget.onAddIncome(name, val, _selectedDate);
   }
 
   @override
@@ -102,14 +154,14 @@ class _AddIncomeSheetState extends State<AddIncomeSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Add Income',
+                      widget.incomeToEdit != null ? 'Edit Income' : 'Add Income',
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 20,
                       ),
                     ),
                     Text(
-                      'For ${widget.monthTitle}',
+                      'For ${DateFormat('MMMM yyyy').format(_selectedDate)}',
                       style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ],
@@ -166,7 +218,7 @@ class _AddIncomeSheetState extends State<AddIncomeSheet> {
               textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(
                 labelText: 'Income Source Name',
-                hintText: 'e.g. Salary, Bonus, Side Hustle',
+                hintText: 'e.g. Salary, Bonus, Freelance, Dividend',
                 prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
                 errorText: _errorMessage != null && _nameController.text.trim().isEmpty ? 'Income source is required' : null,
                 filled: true,
@@ -180,6 +232,57 @@ class _AddIncomeSheetState extends State<AddIncomeSheet> {
                 if (_errorMessage != null) setState(() => _errorMessage = null);
               },
             ),
+            const SizedBox(height: 12),
+
+            // Date Picker Selector
+            InkWell(
+              onTap: _pickDate,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Income Date',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          DateFormat('EEEE, MMM d, yyyy').format(_selectedDate),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.edit_calendar_rounded,
+                      size: 18,
+                      color: greenAccent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -216,9 +319,9 @@ class _AddIncomeSheetState extends State<AddIncomeSheet> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: const Text(
-                  'Add Income Record',
-                  style: TextStyle(
+                child: Text(
+                  widget.incomeToEdit != null ? 'Save Changes' : 'Add Income Record',
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,

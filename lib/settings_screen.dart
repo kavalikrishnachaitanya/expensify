@@ -415,7 +415,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final photoUrl = _localPhotoUrl ?? authProvider?.userModel?.photoUrl ?? authProvider?.user?.photoURL;
     final displayName = authProvider?.userModel?.displayName ?? (widget.isGuestMode && _userName == widget.userName ? 'Guest User' : _userName);
-    final email = authProvider?.user?.email ?? widget.driveService.currentUser?.email ?? '';
+    final email = authProvider?.user?.email ?? widget.driveService.userEmail ?? '';
     final isConnected = email.isNotEmpty;
 
     return Scaffold(
@@ -424,14 +424,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Profile Section ──────────────────────────────────────
-            Text(
-              'Profile',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Profile Section ──────────────────────────────────────
+                Text(
+                  'Profile',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
             const SizedBox(height: 12),
             Material(
               color: theme.colorScheme.surfaceContainerHigh,
@@ -699,7 +702,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }
 

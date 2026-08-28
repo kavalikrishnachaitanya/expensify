@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:expenses/splitwise/utils/helpers.dart';
 
@@ -15,74 +17,46 @@ class UserAvatar extends StatelessWidget {
     this.photoUrl,
     required this.displayName,
     this.radius = 20,
-    this.enableViewerOnTap = true,
+    this.enableViewerOnTap = false,
     this.onTap,
   });
 
-  void _showFullScreenPhotoViewer(
-    BuildContext context,
-    ImageProvider imageProvider,
-  ) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.85),
-      builder: (dialogCtx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-                onPressed: () => Navigator.pop(dialogCtx),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4.0,
-                  child: Image(
-                    image: imageProvider,
-                    fit: BoxFit.contain,
-                    height: MediaQuery.of(dialogCtx).size.height * 0.45,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              displayName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Pinch or double tap to zoom',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+  static const List<Color> _avatarColors = [
+    Color(0xFF6C5CE7), // Vibrant Purple
+    Color(0xFF00CEC9), // Fresh Teal
+    Color(0xFF0984E3), // Sky Blue
+    Color(0xFFE17055), // Warm Coral
+    Color(0xFF00B894), // Emerald Green
+    Color(0xFFE84393), // Rose Pink
+    Color(0xFFFD9644), // Amber Orange
+    Color(0xFF2E86DE), // Royal Blue
+    Color(0xFF10AC84), // Jungle Mint
+    Color(0xFF5F27CD), // Deep Indigo
+  ];
+
+  Color _getColorForName(String name) {
+    if (name.trim().isEmpty) return _avatarColors[0];
+    final cleanName = name.trim().toLowerCase();
+    final hash = cleanName.codeUnits.fold(0, (prev, elem) => prev + elem);
+    return _avatarColors[hash % _avatarColors.length];
+  }
+
+  Widget _buildInitials(Color bgColor, String initials) {
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: radius * 0.85,
+          letterSpacing: -0.5,
         ),
       ),
     );
@@ -90,62 +64,87 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final bgColor = _getColorForName(displayName);
+    final initials = Helpers.getInitials(displayName);
 
-    ImageProvider? imageProvider;
-    if (photoUrl != null && photoUrl!.trim().isNotEmpty) {
-      final url = photoUrl!.trim();
-      try {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          imageProvider = NetworkImage(url);
-        } else if (url.startsWith('assets/')) {
-          imageProvider = AssetImage(url);
-        } else if (url.startsWith('data:image') || url.length > 100) {
+    Widget content;
+    final url = photoUrl?.trim();
+
+    if (url != null && url.isNotEmpty) {
+      if (url.startsWith('data:image') || url.length > 200) {
+        // Base64 uploaded custom image
+        try {
           final base64Clean = url.contains(',') ? url.split(',').last : url;
           final sanitized = base64Clean.replaceAll(RegExp(r'\s+'), '');
-          final bytes = base64Decode(sanitized);
-          imageProvider = MemoryImage(bytes);
-        } else if (url.startsWith('/')) {
+          final Uint8List bytes = base64Decode(sanitized);
+          content = ClipOval(
+            child: Image.memory(
+              bytes,
+              width: radius * 2,
+              height: radius * 2,
+              fit: BoxFit.cover,
+              errorBuilder: (ctx, err, stack) => _buildInitials(bgColor, initials),
+            ),
+          );
+        } catch (_) {
+          content = _buildInitials(bgColor, initials);
+        }
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        // Network URL image with errorBuilder to prevent 429 crashes
+        content = ClipOval(
+          child: Image.network(
+            url,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (ctx, err, stack) => _buildInitials(bgColor, initials),
+          ),
+        );
+      } else if (url.startsWith('assets/')) {
+        // Asset image
+        content = ClipOval(
+          child: Image.asset(
+            url,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (ctx, err, stack) => _buildInitials(bgColor, initials),
+          ),
+        );
+      } else if (!kIsWeb && url.startsWith('/')) {
+        // Local file image
+        try {
           final file = File(url);
           if (file.existsSync()) {
-            imageProvider = FileImage(file);
-          }
-        }
-      } catch (e) {
-        debugPrint('UserAvatar: Error parsing image avatar string: $e');
-      }
-    }
-
-    final avatarWidget = CircleAvatar(
-      radius: radius,
-      backgroundColor: colorScheme.primaryContainer,
-      backgroundImage: imageProvider,
-      child: imageProvider == null
-          ? Text(
-              Helpers.getInitials(displayName),
-              style: TextStyle(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.bold,
-                fontSize: radius * 0.8,
+            content = ClipOval(
+              child: Image.file(
+                file,
+                width: radius * 2,
+                height: radius * 2,
+                fit: BoxFit.cover,
+                errorBuilder: (ctx, err, stack) => _buildInitials(bgColor, initials),
               ),
-            )
-          : null,
-    );
+            );
+          } else {
+            content = _buildInitials(bgColor, initials);
+          }
+        } catch (_) {
+          content = _buildInitials(bgColor, initials);
+        }
+      } else {
+        content = _buildInitials(bgColor, initials);
+      }
+    } else {
+      content = _buildInitials(bgColor, initials);
+    }
 
     if (onTap != null) {
       return GestureDetector(
         onTap: onTap,
-        child: avatarWidget,
+        child: content,
       );
     }
 
-    if (enableViewerOnTap && imageProvider != null) {
-      return GestureDetector(
-        onTap: () => _showFullScreenPhotoViewer(context, imageProvider!),
-        child: avatarWidget,
-      );
-    }
-
-    return avatarWidget;
+    return content;
   }
 }

@@ -15,6 +15,7 @@ import 'login_screen.dart';
 import 'services/google_drive_service.dart';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'splitwise/providers/auth_provider.dart' as split_auth;
@@ -23,6 +24,8 @@ import 'splitwise/providers/expense_provider.dart' as split_expense;
 import 'splitwise/screens/home/home_screen.dart' as split_home;
 import 'splitwise/screens/groups/create_group_screen.dart' as split_create_group;
 import 'splitwise/screens/expenses/add_expense_screen.dart';
+import 'widgets/custom_modal_dialog.dart';
+import 'splitwise/services/firestore_service.dart';
 
 bool isFirebaseInitialized = false;
 
@@ -38,6 +41,7 @@ void main() async {
     isFirebaseInitialized = false;
   }
   await dotenv.load(fileName: ".env");
+  await GoogleDriveService.ensureInitialized();
   if (!kIsWeb) {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -179,17 +183,21 @@ class _MainScreenState extends State<MainScreen> {
     _categories = getInitialCategories();
     _expenses = getInitialExpenses();
 
-    // Pre-seed current month and previous month income for immediate demo
-    final now = DateTime.now();
-    _monthlyIncomeMap['${now.year}_${now.month}'] = [
-      IncomeRecord(id: 'inc_curr_1', sourceName: 'Salary', amount: 3500.0, date: now)
-    ];
-    final prevMonth = DateTime(now.year, now.month - 1, 1);
-    _monthlyIncomeMap['${prevMonth.year}_${prevMonth.month}'] = [
-      IncomeRecord(id: 'inc_prev_1', sourceName: 'Salary', amount: 3200.0, date: prevMonth)
-    ];
-
     _loadFromDrive();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initSplitwiseGroups();
+    });
+  }
+
+  void _initSplitwiseGroups() {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        context.read<split_group.GroupProvider>().loadUserGroups(user.uid);
+      }
+    } catch (e) {
+      debugPrint('Error pre-loading groups in MainScreen: $e');
+    }
   }
 
   Future<void> _loadFromDrive() async {
@@ -198,14 +206,16 @@ class _MainScreenState extends State<MainScreen> {
       try {
         final data = jsonDecode(jsonStr);
         setState(() {
-          _userName = data['userName'] ?? widget.driveService.currentUser?.displayName ?? 'User';
+          _userName = data['userName'] ?? widget.driveService.userDisplayName ?? 'User';
           _totalSavings = (data['totalSavings'] ?? 0.0).toDouble();
           
           if (data['categories'] != null) {
-            _categories = (data['categories'] as List).map((e) => ExpenseCategory.fromJson(e)).toList();
+            _categories.clear();
+            _categories.addAll((data['categories'] as List).map((e) => ExpenseCategory.fromJson(e)));
           }
           if (data['expenses'] != null) {
-            _expenses = (data['expenses'] as List).map((e) => Expense.fromJson(e)).toList();
+            _expenses.clear();
+            _expenses.addAll((data['expenses'] as List).map((e) => Expense.fromJson(e)));
           }
           if (data['savingsHistory'] != null) {
             _savingsHistory.clear();
@@ -226,10 +236,10 @@ class _MainScreenState extends State<MainScreen> {
       } catch (e) {
         debugPrint('Error parsing data: $e');
       }
-    } else {
-      // First time, user has no data in drive. Sync dummy data to drive.
+    } else if (widget.driveService.isDriveConnected && !widget.isGuestMode) {
+      // First time, user has no data in drive and no local cache. Sync initial data to drive.
       setState(() {
-        _userName = widget.driveService.currentUser?.displayName ?? 'User';
+        _userName = widget.driveService.userDisplayName ?? 'User';
       });
       _syncToDrive();
     }
@@ -255,9 +265,10 @@ class _MainScreenState extends State<MainScreen> {
     return records.fold(0.0, (sum, record) => sum + record.amount);
   }
 
-  void _addIncomeRecord(String sourceName, double amount, {String? specificMonthKey, String? sharedId}) {
+  void _addIncomeRecord(String sourceName, double amount, {DateTime? date, String? specificMonthKey, String? sharedId}) {
     setState(() {
-      final key = specificMonthKey ?? _currentMonthKey;
+      final recordDate = date ?? DateTime.now();
+      final key = specificMonthKey ?? '${recordDate.year}_${recordDate.month}';
       if (!_monthlyIncomeMap.containsKey(key)) {
         _monthlyIncomeMap[key] = [];
       }
@@ -266,8 +277,30 @@ class _MainScreenState extends State<MainScreen> {
           id: sharedId != null ? 'inc_$sharedId' : IdGenerator.generateIncomeId(),
           sourceName: sourceName,
           amount: amount,
-          date: DateTime.now(),
+          date: recordDate,
           linkedTransactionId: sharedId,
+        ),
+      );
+    });
+    _syncToDrive();
+  }
+
+  void _editIncomeRecord(String id, String sourceName, double amount, {required DateTime date, String? linkedSharedId}) {
+    setState(() {
+      for (var list in _monthlyIncomeMap.values) {
+        list.removeWhere((inc) => inc.id == id);
+      }
+      final key = '${date.year}_${date.month}';
+      if (!_monthlyIncomeMap.containsKey(key)) {
+        _monthlyIncomeMap[key] = [];
+      }
+      _monthlyIncomeMap[key]!.add(
+        IncomeRecord(
+          id: id,
+          sourceName: sourceName,
+          amount: amount,
+          date: date,
+          linkedTransactionId: linkedSharedId,
         ),
       );
     });
@@ -288,15 +321,40 @@ class _MainScreenState extends State<MainScreen> {
     _syncToDrive();
   }
 
-  void _deleteExpense(String id) {
+  void _deleteExpense(String id, {String? linkedSplitwiseId, String? matchDescription, double? matchAmount}) {
     setState(() {
-      _expenses.removeWhere((e) => e.id == id);
+      final initialCount = _expenses.length;
+      _expenses.removeWhere((e) {
+        // 1. Direct personal expense ID match
+        if (id.isNotEmpty && e.id == id) return true;
+
+        // 2. Splitwise linked ID match
+        if (linkedSplitwiseId != null && linkedSplitwiseId.isNotEmpty) {
+          if (e.linkedTransactionId == linkedSplitwiseId || e.id == linkedSplitwiseId) return true;
+        }
+        if (id.isNotEmpty && (e.linkedTransactionId == id || e.id == id)) return true;
+
+        // 3. Fallback: match by description / title / note
+        if (matchDescription != null && matchDescription.isNotEmpty) {
+          String clean(String s) {
+            var str = s.trim().toLowerCase();
+            if (str.contains(':')) str = str.split(':').last.trim();
+            return str;
+          }
+          final target = clean(matchDescription);
+          final title = clean(e.title);
+          final note = (e.note ?? '').trim().toLowerCase();
+          final textMatches = target.isNotEmpty &&
+              (title == target || title.contains(target) || target.contains(title) || note.contains(target));
+          if (textMatches) {
+            return true;
+          }
+        }
+        return false;
+      });
+      debugPrint('Personal _deleteExpense called (id: "$id", linked: "$linkedSplitwiseId", desc: "$matchDescription"). Count: $initialCount -> ${_expenses.length}');
     });
     _syncToDrive();
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Expense deleted')),
-    );
   }
 
   void _deleteIncome(String id) {
@@ -348,6 +406,79 @@ class _MainScreenState extends State<MainScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Vault transaction deleted')),
     );
+  }
+
+  Future<bool> _confirmDeleteExpense(BuildContext context, dynamic item) async {
+    final theme = Theme.of(context);
+    final isExpense = item is Expense;
+    final isLinkedToSplitwise = isExpense && (item.linkedTransactionId != null && item.linkedTransactionId!.isNotEmpty);
+
+    bool deleteFromSplitwise = isLinkedToSplitwise;
+    final itemTitle = isExpense ? item.title : (item as IncomeRecord).sourceName;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => CustomModalDialog(
+          icon: Icons.delete_outline_rounded,
+          iconColor: theme.colorScheme.error,
+          iconBackgroundColor: theme.colorScheme.errorContainer,
+          title: isExpense ? 'Delete Expense' : 'Delete Income',
+          subtitle: 'Are you sure you want to delete "$itemTitle"?',
+          content: isLinkedToSplitwise
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: CheckboxListTile(
+                    value: deleteFromSplitwise,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: theme.colorScheme.error,
+                    dense: true,
+                    title: const Text(
+                      'Also delete from linked Splitwise group',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    onChanged: (val) {
+                      setDialogState(() {
+                        deleteFromSplitwise = val ?? false;
+                      });
+                    },
+                  ),
+                )
+              : null,
+          primaryButtonText: 'Delete',
+          primaryButtonColor: theme.colorScheme.error,
+          onPrimaryPressed: () => Navigator.pop(ctx, true),
+        ),
+      ),
+    );
+
+    if (result == true) {
+      if (isExpense) {
+        final expense = item;
+        final splitwiseId = expense.linkedTransactionId;
+        _deleteExpense(expense.id);
+
+        if (deleteFromSplitwise && splitwiseId != null && splitwiseId.isNotEmpty) {
+          try {
+            await FirestoreService().deleteExpense(splitwiseId);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Expense deleted from Tracker & Splitwise group')),
+              );
+            }
+          } catch (e) {
+            debugPrint('Error deleting linked splitwise expense: $e');
+          }
+        }
+      } else {
+        _deleteIncome((item as IncomeRecord).id);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   void _addVaultGoal(VaultGoal goal) {
@@ -406,7 +537,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  void _openAddExpenseModal() {
+  void _openAddExpenseModal({Expense? expenseToEdit}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -414,12 +545,13 @@ class _MainScreenState extends State<MainScreen> {
       builder: (ctx) => AddExpenseSheet(
         categories: _categories,
         currencySymbol: _currencySymbol,
+        expenseToEdit: expenseToEdit,
         onAddExpense: _addExpense,
       ),
     );
   }
 
-  void _openAddIncomeModal() {
+  void _openAddIncomeModal({IncomeRecord? incomeToEdit}) {
     final monthTitle = '${_getMonthName(_selectedDate.month)} ${_selectedDate.year}';
     showModalBottomSheet(
       context: context,
@@ -428,11 +560,18 @@ class _MainScreenState extends State<MainScreen> {
       builder: (ctx) => AddIncomeSheet(
         currencySymbol: _currencySymbol,
         monthTitle: monthTitle,
-        onAddIncome: (name, val) {
-          _addIncomeRecord(name, val);
+        initialDate: incomeToEdit?.date ?? _selectedDate,
+        incomeToEdit: incomeToEdit,
+        onAddIncome: (name, val, date) {
+          if (incomeToEdit != null) {
+            _editIncomeRecord(incomeToEdit.id, name, val, date: date, linkedSharedId: incomeToEdit.linkedTransactionId);
+          } else {
+            _addIncomeRecord(name, val, date: date);
+          }
+          final addedMonthTitle = '${_getMonthName(date.month)} ${date.year}';
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Income added for $monthTitle')),
+            SnackBar(content: Text(incomeToEdit != null ? 'Income updated' : 'Income added for $addedMonthTitle')),
           );
         },
       ),
@@ -1183,12 +1322,8 @@ class _MainScreenState extends State<MainScreen> {
         ],
     );
 
-    if (isWideScreen) {
-      return content;
-    }
-    
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isWideScreen ? 24 : 16),
       child: content,
     );
   }
@@ -1239,6 +1374,26 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await _confirmDeleteExpense(context, item);
+              },
+              icon: Icon(Icons.delete_outline_rounded, size: 16, color: Theme.of(context).colorScheme.error),
+              label: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                if (isIncome) {
+                  _openAddIncomeModal(incomeToEdit: item);
+                } else {
+                  _openAddExpenseModal(expenseToEdit: item);
+                }
+              },
+              icon: const Icon(Icons.edit_rounded, size: 16),
+              label: const Text('Edit'),
+            ),
             if (!isIncome && isFirebaseInitialized)
               FilledButton.icon(
                 onPressed: () {
@@ -1258,70 +1413,264 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// Open group selection modal to redirect an existing personal transaction into Splitwise
-  void _openSplitGroupForExpense(Expense expense) {
-    final groupProvider = context.read<split_group.GroupProvider>();
-    if (groupProvider.groups.isEmpty) {
+  Future<void> _unlinkExpenseFromSplitwise(Expense expense) async {
+    final linkedId = expense.linkedTransactionId;
+    if (linkedId != null && linkedId.isNotEmpty && isFirebaseInitialized) {
+      try {
+        await FirestoreService().deleteExpense(linkedId);
+      } catch (e) {
+        debugPrint('Error deleting linked splitwise doc: $e');
+      }
+    }
+
+    setState(() {
+      final index = _expenses.indexWhere((e) => e.id == expense.id);
+      if (index != -1) {
+        _expenses[index] = expense.copyWith(linkedTransactionId: '');
+      }
+    });
+    _syncToDrive();
+
+    if (mounted) {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No Splitwise groups found. Please create or join a group first!'),
+          content: Text('Transaction unlinked and deleted from Splitwise group'),
         ),
       );
-      return;
     }
+  }
+
+  /// Open group selection modal to redirect an existing personal transaction into Splitwise
+  void _openSplitGroupForExpense(Expense expense) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final gp = context.read<split_group.GroupProvider>();
+      if (gp.groups.isEmpty) {
+        gp.loadUserGroups(user.uid);
+      }
+    }
+
+    final isAlreadyLinked = expense.linkedTransactionId != null && expense.linkedTransactionId!.isNotEmpty;
 
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Select Group to Split Transaction',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Splitting "${expense.title}" ($_currencySymbol${expense.amount.toStringAsFixed(2)})',
-              style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            ...groupProvider.groups.map((group) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Theme.of(ctx).colorScheme.primaryContainer,
-                    child: Icon(Icons.group_rounded, color: Theme.of(ctx).colorScheme.primary),
+      builder: (ctx) => Consumer<split_group.GroupProvider>(
+        builder: (ctx, groupProvider, _) {
+          if (isAlreadyLinked) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(ctx).colorScheme.primaryContainer,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.link_rounded, color: Theme.of(ctx).colorScheme.primary, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Already Linked to Group',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
                   ),
-                  title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${group.memberIds.length} members'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddExpenseScreen(
-                          group: group,
-                          initialDescription: expense.title,
-                          initialAmount: expense.amount,
-                          pendingPersonalExpense: expense,
-                          isImported: true,
-                          onAddPersonalExpense: _addExpense,
-                          personalExpenses: _expenses,
-                          categories: _categories,
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Theme.of(ctx).colorScheme.outlineVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          expense.title,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$_currencySymbol${expense.amount.toStringAsFixed(2)} • ${expense.date.day}/${expense.date.month}/${expense.date.year}',
+                          style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Icon(Icons.info_outline_rounded, size: 16, color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'This transaction is already split in a Splitwise group. Unlink it below to remove it from the group. You can then split it into any other group.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _unlinkExpenseFromSplitwise(expense);
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(ctx).colorScheme.error,
+                        foregroundColor: Theme.of(ctx).colorScheme.onError,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                    );
-                  },
-                )),
-            const SizedBox(height: 12),
-          ],
-        ),
+                      icon: const Icon(Icons.link_off_rounded),
+                      label: const Text(
+                        'Unlink from Split Group',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          }
+
+          return Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Group to Split Transaction',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Splitting "${expense.title}" ($_currencySymbol${expense.amount.toStringAsFixed(2)})',
+                  style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 16),
+                if (groupProvider.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (groupProvider.groups.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.group_off_rounded,
+                            size: 48,
+                            color: Theme.of(ctx).colorScheme.outline,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No Splitwise groups found',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Create or join a group to start splitting bills with friends.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              split_create_group.showCreateGroupSheet(context);
+                            },
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Create New Group'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: groupProvider.groups.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (ctx, index) {
+                        final group = groupProvider.groups[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: Theme.of(ctx).colorScheme.primaryContainer,
+                            child: Icon(Icons.group_rounded, color: Theme.of(ctx).colorScheme.primary),
+                          ),
+                          title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text('${group.memberIds.length} members'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddExpenseScreen(
+                                  group: group,
+                                  initialDescription: expense.title,
+                                  initialAmount: expense.amount,
+                                  pendingPersonalExpense: expense,
+                                  isImported: true,
+                                  onAddPersonalExpense: _addExpense,
+                                  personalExpenses: _expenses,
+                                  categories: _categories,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1472,13 +1821,14 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       child: const Icon(Icons.delete_rounded, color: Colors.white),
                     ),
-                    onDismissed: (direction) => _deleteExpense(item.id),
+                    confirmDismiss: (direction) => _confirmDeleteExpense(context, item),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Material(
                         color: theme.colorScheme.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(16),
                         child: InkWell(
+                          onTap: () => _showTransactionDetails(context, item, cat),
                           onLongPress: () => _showTransactionDetails(context, item, cat),
                           borderRadius: BorderRadius.circular(16),
                           child: Padding(
@@ -1537,13 +1887,40 @@ class _MainScreenState extends State<MainScreen> {
                                 ],
                               ),
                             ),
-                          Text(
-                            '-$_currencySymbol${item.amount.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Color(0xFFFF6B6B),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '-$_currencySymbol${item.amount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Color(0xFFFF6B6B),
+                                ),
+                              ),
+                              if (isWideScreen || kIsWeb) ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 18),
+                                  tooltip: 'Edit Expense',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _openAddExpenseModal(expenseToEdit: item),
+                                ),
+                                if (isFirebaseInitialized)
+                                  IconButton(
+                                    icon: const Icon(Icons.call_split_rounded, size: 18),
+                                    tooltip: 'Split in Group',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () => _openSplitGroupForExpense(item),
+                                  ),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, size: 18, color: theme.colorScheme.error),
+                                  tooltip: 'Delete Expense',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _confirmDeleteExpense(context, item),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
@@ -1566,13 +1943,14 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       child: const Icon(Icons.delete_rounded, color: Colors.white),
                     ),
-                    onDismissed: (direction) => _deleteIncome(item.id),
+                    confirmDismiss: (direction) => _confirmDeleteExpense(context, item),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                     child: Material(
                       color: theme.colorScheme.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(16),
                       child: InkWell(
+                        onTap: () => _showTransactionDetails(context, item, incomeCategory),
                         onLongPress: () => _showTransactionDetails(context, item, incomeCategory),
                         borderRadius: BorderRadius.circular(16),
                         child: Padding(
@@ -1606,13 +1984,33 @@ class _MainScreenState extends State<MainScreen> {
                               ],
                             ),
                           ),
-                        Text(
-                          '+$_currencySymbol${item.amount.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: incomeCategory.color,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '+$_currencySymbol${item.amount.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: incomeCategory.color,
+                              ),
+                            ),
+                            if (isWideScreen || kIsWeb) ...[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                tooltip: 'Edit Income',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _openAddIncomeModal(incomeToEdit: item),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete_outline_rounded, size: 18, color: theme.colorScheme.error),
+                                tooltip: 'Delete Income',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _confirmDeleteExpense(context, item),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -1630,15 +2028,18 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     if (isWideScreen) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: searchField,
-          ),
-          contentColumn,
-        ],
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: searchField,
+            ),
+            contentColumn,
+          ],
+        ),
       );
     }
 

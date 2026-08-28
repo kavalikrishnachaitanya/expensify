@@ -163,8 +163,20 @@ class FirestoreService {
 
   // ==================== EXPENSE OPERATIONS ====================
 
-  /// Add expense
+  /// Add expense with duplicate transaction ID protection
   Future<String> addExpense(ExpenseModel expense) async {
+    if (expense.linkedPersonalExpenseId != null && expense.linkedPersonalExpenseId!.isNotEmpty) {
+      final existing = await _firestore
+          .collection(FirestoreCollections.expenses)
+          .where('groupId', isEqualTo: expense.groupId)
+          .where('linkedPersonalExpenseId', isEqualTo: expense.linkedPersonalExpenseId)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) {
+        return existing.docs.first.id;
+      }
+    }
+
     final docRef = await _firestore
         .collection(FirestoreCollections.expenses)
         .add(expense.toMap());

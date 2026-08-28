@@ -10,7 +10,7 @@ import 'package:expenses/splitwise/utils/constants.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(Expense)? onAddPersonalExpense;
-  final Function(String)? onDeletePersonalExpense;
+  final void Function(String, {String? linkedSplitwiseId, String? matchDescription, double? matchAmount})? onDeletePersonalExpense;
   final Function(String, double)? onAddIncomeRecord;
   final List<Expense>? personalExpenses;
   final List<ExpenseCategory>? categories;

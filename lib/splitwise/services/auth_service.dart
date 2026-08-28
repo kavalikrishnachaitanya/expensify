@@ -5,13 +5,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:expenses/splitwise/models/user_model.dart';
 import 'package:expenses/splitwise/utils/constants.dart';
 
+import 'package:expenses/services/google_drive_service.dart';
+
 /// Service for handling authentication
 class AuthService {
   FirebaseAuth get _auth => FirebaseAuth.instance;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
-  /// Static future to ensure GoogleSignIn is initialized exactly once.
-  static final Future<void> googleSignInInitialized = GoogleSignIn.instance.initialize();
+  static Future<void> get googleSignInInitialized => GoogleDriveService.ensureInitialized();
 
   AuthService() {
     if (kIsWeb) {
@@ -98,6 +99,22 @@ class AuthService {
           );
         }
         return null;
+      }
+
+      if (kIsWeb) {
+        final googleProvider = GoogleAuthProvider();
+        final userCredential = await _auth.signInWithPopup(googleProvider);
+        if (userCredential.user != null) {
+          final userDoc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
+          if (!userDoc.exists) {
+            await createUserDocument(
+              userCredential.user!,
+              userCredential.user!.displayName ?? 'User',
+              photoUrl: userCredential.user!.photoURL,
+            );
+          }
+        }
+        return userCredential;
       }
 
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;

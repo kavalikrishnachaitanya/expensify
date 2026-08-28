@@ -39,6 +39,7 @@ class ExpenseProvider with ChangeNotifier {
     _expenses = []; // Clear old data immediately
     _balances = {};
     _settlements = [];
+    _error = null;
     _safeNotifyListeners();
 
     _expensesSubscription = _firestoreService.getGroupExpenses(groupId).listen(
@@ -80,6 +81,15 @@ class ExpenseProvider with ChangeNotifier {
   }) async {
     _setLoading(true);
     _error = null;
+
+    // Check if this personal transaction is already split in this group
+    if (linkedPersonalExpenseId != null && linkedPersonalExpenseId.isNotEmpty) {
+      final existingExpense = _expenses.where((e) => e.groupId == groupId && e.linkedPersonalExpenseId == linkedPersonalExpenseId).firstOrNull;
+      if (existingExpense != null) {
+        _setLoading(false);
+        return existingExpense.id;
+      }
+    }
 
     // Calculate equal split
     final splitAmount = amount / splitAmongIds.length;
@@ -125,7 +135,6 @@ class ExpenseProvider with ChangeNotifier {
       _expenses = previousExpenses;
       _calculateBalances();
       
-      _error = e.toString();
       _setLoading(false);
       notifyListeners();
       return null;

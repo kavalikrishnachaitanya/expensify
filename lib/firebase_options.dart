@@ -28,6 +28,7 @@ class DefaultFirebaseOptions {
     appId: '1:782208796750:web:fad9f3ff51730a9b941b1f',
     messagingSenderId: '782208796750',
     projectId: 'expensify-505418',
+    authDomain: 'expensify-505418.firebaseapp.com',
     storageBucket: 'expensify-505418.firebasestorage.app',
   );
 

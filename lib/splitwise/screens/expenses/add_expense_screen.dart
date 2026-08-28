@@ -149,14 +149,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             ),
           ),
         );
-      } else if (expenseProvider.error != null && mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(expenseProvider.error!),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
       }
     }
   }
@@ -165,7 +157,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final currentUserId = context.read<AuthProvider>().user?.uid;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.initialDescription != null ? 'Split Transaction' : 'Add Group Expense'),
@@ -616,27 +607,64 @@ class _TransactionPickerModalState extends State<TransactionPickerModal> {
                         itemCount: filtered.length,
                         itemBuilder: (context, index) {
                           final expense = filtered[index];
+                          final isAlreadySplit = expense.linkedTransactionId != null && expense.linkedTransactionId!.isNotEmpty;
+
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: theme.colorScheme.primaryContainer,
-                                child: Icon(Icons.receipt_long_rounded, color: theme.colorScheme.primary, size: 20),
+                                backgroundColor: isAlreadySplit
+                                    ? theme.colorScheme.surfaceContainerHighest
+                                    : theme.colorScheme.primaryContainer,
+                                child: Icon(
+                                  isAlreadySplit ? Icons.link_rounded : Icons.receipt_long_rounded,
+                                  color: isAlreadySplit ? theme.colorScheme.outline : theme.colorScheme.primary,
+                                  size: 20,
+                                ),
                               ),
-                              title: Text(expense.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                              subtitle: Text(
-                                '${expense.date.day}/${expense.date.month}/${expense.date.year}',
-                                style: const TextStyle(fontSize: 12),
+                              title: Text(
+                                expense.title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: isAlreadySplit ? theme.colorScheme.onSurface.withValues(alpha: 0.6) : null,
+                                ),
+                              ),
+                              subtitle: Row(
+                                children: [
+                                  Text(
+                                    '${expense.date.day}/${expense.date.month}/${expense.date.year}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  if (isAlreadySplit) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'Already Split',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.amber,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                               trailing: Text(
                                 '₹${expense.amount.toStringAsFixed(2)}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
-                                  color: theme.colorScheme.primary,
+                                  color: isAlreadySplit ? theme.colorScheme.outline : theme.colorScheme.primary,
                                 ),
                               ),
-                              onTap: () => widget.onSelectTransaction(expense),
+                              onTap: isAlreadySplit ? null : () => widget.onSelectTransaction(expense),
                             ),
                           );
                         },

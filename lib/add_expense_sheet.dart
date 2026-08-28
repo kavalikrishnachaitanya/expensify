@@ -6,12 +6,14 @@ import 'models.dart';
 class AddExpenseSheet extends StatefulWidget {
   final List<ExpenseCategory> categories;
   final String currencySymbol;
+  final Expense? expenseToEdit;
   final Function(Expense) onAddExpense;
 
   const AddExpenseSheet({
     super.key,
     required this.categories,
     required this.currencySymbol,
+    this.expenseToEdit,
     required this.onAddExpense,
   });
 
@@ -32,7 +34,17 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedCategoryId = widget.categories.isNotEmpty ? widget.categories.first.id : '';
+    if (widget.expenseToEdit != null) {
+      final exp = widget.expenseToEdit!;
+      _titleController.text = exp.title;
+      _amountController.text = exp.amount.toStringAsFixed(2);
+      _noteController.text = exp.note ?? '';
+      _selectedCategoryId = exp.categoryId;
+      _selectedPaymentMethod = exp.paymentMethod;
+      _selectedDate = exp.date;
+    } else {
+      _selectedCategoryId = widget.categories.isNotEmpty ? widget.categories.first.id : '';
+    }
   }
 
   @override
@@ -62,13 +74,14 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     }
 
     final newExpense = Expense(
-      id: IdGenerator.generateExpenseId(),
+      id: widget.expenseToEdit?.id ?? IdGenerator.generateExpenseId(),
       title: titleText,
       amount: amount,
       date: _selectedDate,
       categoryId: _selectedCategoryId,
       paymentMethod: _selectedPaymentMethod,
       note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+      linkedTransactionId: widget.expenseToEdit?.linkedTransactionId,
     );
 
     Navigator.of(context).pop();
@@ -129,7 +142,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Add New Expense',
+              widget.expenseToEdit != null ? 'Edit Expense' : 'Add New Expense',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -382,9 +395,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               child: ElevatedButton.icon(
                 onPressed: _submitData,
                 icon: const Icon(Icons.check_circle_rounded),
-                label: const Text(
-                  'Add Expense',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                label: Text(
+                  widget.expenseToEdit != null ? 'Save Changes' : 'Add Expense',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
