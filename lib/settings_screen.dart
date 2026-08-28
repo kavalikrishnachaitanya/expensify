@@ -10,8 +10,10 @@ import 'services/google_drive_service.dart';
 import 'login_screen.dart';
 import 'main.dart';
 import 'package:expenses/splitwise/providers/auth_provider.dart' as split_auth;
-import 'package:expenses/splitwise/providers/group_provider.dart' as split_group;
-import 'package:expenses/splitwise/providers/expense_provider.dart' as split_expense;
+import 'package:expenses/splitwise/providers/group_provider.dart'
+    as split_group;
+import 'package:expenses/splitwise/providers/expense_provider.dart'
+    as split_expense;
 import 'package:expenses/widgets/custom_modal_dialog.dart';
 import 'splitwise/widgets/user_avatar.dart';
 
@@ -141,9 +143,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: Theme.of(ctx).colorScheme.primaryContainer,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.photo_library_rounded, color: Theme.of(ctx).colorScheme.primary),
+                child: Icon(
+                  Icons.photo_library_rounded,
+                  color: Theme.of(ctx).colorScheme.primary,
+                ),
               ),
-              title: const Text('Upload Photo from Gallery', style: TextStyle(fontWeight: FontWeight.w600)),
+              title: const Text(
+                'Upload Photo from Gallery',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               subtitle: const Text('Pick any photo (automatically compressed)'),
               onTap: () {
                 Navigator.pop(ctx);
@@ -151,22 +159,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
             if (!kIsWeb)
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.secondaryContainer,
-                  shape: BoxShape.circle,
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.secondaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.camera_alt_rounded,
+                    color: Theme.of(ctx).colorScheme.secondary,
+                  ),
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: Theme.of(ctx).colorScheme.secondary),
+                title: const Text(
+                  'Take Photo with Camera',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text('Snap a quick low-size profile picture'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndSetAvatar(ImageSource.camera, displayName);
+                },
               ),
-              title: const Text('Take Photo with Camera', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Snap a quick low-size profile picture'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickAndSetAvatar(ImageSource.camera, displayName);
-              },
-            ),
             if (currentPhotoUrl != null && currentPhotoUrl.isNotEmpty) ...[
               const Divider(height: 24),
               ListTile(
@@ -176,9 +190,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: Theme.of(ctx).colorScheme.errorContainer,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.delete_outline_rounded, color: Theme.of(ctx).colorScheme.error),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
                 ),
-                title: Text('Remove Profile Photo', style: TextStyle(fontWeight: FontWeight.w600, color: Theme.of(ctx).colorScheme.error)),
+                title: Text(
+                  'Remove Profile Photo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+                ),
                 subtitle: const Text('Revert to initial letter icon'),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -198,7 +221,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
-        maxWidth: 256, // Low resolution limit (256x256) to eliminate render & memory lag
+        maxWidth:
+            256, // Low resolution limit (256x256) to eliminate render & memory lag
         maxHeight: 256,
         imageQuality: 60, // Optimized compression quality
       );
@@ -211,9 +235,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick image: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
       }
     }
   }
@@ -252,7 +276,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved locally. Will sync when net is available.')),
+          SnackBar(
+            content: Text('Saved locally. Will sync when net is available.'),
+          ),
         );
       }
     } finally {
@@ -282,7 +308,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               iconColor: theme.colorScheme.error,
               iconBackgroundColor: theme.colorScheme.errorContainer,
               title: 'Delete Account',
-              subtitle: 'This action is IRREVERSIBLE. It will permanently delete your account & wipe all data.',
+              subtitle:
+                  'This action is IRREVERSIBLE. It will permanently delete your account & wipe all data.',
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -294,7 +321,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         TextSpan(text: 'To confirm, type '),
                         TextSpan(
                           text: 'DELETE',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,
+                          ),
                         ),
                         TextSpan(text: ' below:'),
                       ],
@@ -313,7 +343,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                     ),
                     onChanged: (_) {
                       setDialogState(() {});
@@ -322,8 +355,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
               primaryButtonText: 'Delete Everything',
-              primaryButtonColor: isConfirmed ? theme.colorScheme.error : theme.colorScheme.error.withValues(alpha: 0.4),
-              onPrimaryPressed: isConfirmed ? () => Navigator.of(ctx).pop(true) : null,
+              primaryButtonColor: isConfirmed
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.error.withValues(alpha: 0.4),
+              onPrimaryPressed: isConfirmed
+                  ? () => Navigator.of(ctx).pop(true)
+                  : null,
             );
           },
         );
@@ -342,7 +379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (success) {
       // 2. Wipe ALL Google Drive backup files (expenditure_backup.json, profile_avatar.txt)
       await widget.driveService.deleteAllData();
-      
+
       // 3. Sign out of Google SSO
       await widget.driveService.signOut();
 
@@ -351,7 +388,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (_) => const LoginScreen(isDarkMode: true, onToggleTheme: _dummyToggle),
+          builder: (_) =>
+              const LoginScreen(isDarkMode: true, onToggleTheme: _dummyToggle),
         ),
         (route) => false,
       );
@@ -360,7 +398,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(auth.error ?? 'Could not delete account. Settle all group dues first.'),
+          content: Text(
+            auth.error ??
+                'Could not delete account. Settle all group dues first.',
+          ),
           backgroundColor: Theme.of(context).colorScheme.error,
           duration: const Duration(seconds: 5),
         ),
@@ -380,7 +421,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Successfully connected Google Account! Syncing to cloud...'),
+          content: Text(
+            'Successfully connected Google Account! Syncing to cloud...',
+          ),
           backgroundColor: Color(0xFF1DD1A1),
         ),
       );
@@ -398,7 +441,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const LoginScreen(isDarkMode: true, onToggleTheme: _dummyToggle),
+        builder: (_) =>
+            const LoginScreen(isDarkMode: true, onToggleTheme: _dummyToggle),
       ),
       (route) => false,
     );
@@ -413,14 +457,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       authProvider = context.watch<split_auth.AuthProvider>();
     } catch (_) {}
 
-    final photoUrl = _localPhotoUrl ?? authProvider?.userModel?.photoUrl ?? authProvider?.user?.photoURL;
-    final displayName = authProvider?.userModel?.displayName ?? (widget.isGuestMode && _userName == widget.userName ? 'Guest User' : _userName);
-    final email = authProvider?.user?.email ?? widget.driveService.userEmail ?? '';
+    final photoUrl =
+        _localPhotoUrl ??
+        authProvider?.userModel?.photoUrl ??
+        authProvider?.user?.photoURL;
+    final displayName =
+        authProvider?.userModel?.displayName ??
+        (widget.isGuestMode && _userName == widget.userName
+            ? 'Guest User'
+            : _userName);
+    final email =
+        authProvider?.user?.email ?? widget.driveService.userEmail ?? '';
     final isConnected = email.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Settings',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -433,278 +488,340 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // ── Profile Section ──────────────────────────────────────
                 Text(
                   'Profile',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-            const SizedBox(height: 12),
-            Material(
-              color: theme.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
+                const SizedBox(height: 12),
+                Material(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                       children: [
-                        // Avatar with edit overlay badge
-                        GestureDetector(
-                          onTap: _isUpdatingAvatar
-                              ? null
-                              : () => _openAvatarSettingsModal(displayName, photoUrl),
-                          child: Stack(
-                            children: [
-                              UserAvatar(
-                                photoUrl: photoUrl,
-                                displayName: displayName.isNotEmpty ? displayName : 'User',
-                                radius: 34,
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: theme.colorScheme.surfaceContainerHigh,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: _isUpdatingAvatar
-                                      ? const SizedBox(
-                                          width: 12,
-                                          height: 12,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                        )
-                                      : const Icon(
-                                          Icons.camera_alt_rounded,
-                                          size: 14,
-                                          color: Colors.white,
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayName,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                isConnected ? email : 'Local Guest Account',
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_rounded),
-                          onPressed: () => _openEditNameDialog(displayName),
-                          tooltip: 'Edit Name',
-                        ),
-                      ],
-                    ),
-                    if (!isConnected) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
+                        Row(
                           children: [
-                            Icon(Icons.cloud_upload_rounded, color: theme.colorScheme.primary),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                    'Connect Google Account',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            // Avatar with edit overlay badge
+                            GestureDetector(
+                              onTap: _isUpdatingAvatar
+                                  ? null
+                                  : () => _openAvatarSettingsModal(
+                                      displayName,
+                                      photoUrl,
+                                    ),
+                              child: Stack(
+                                children: [
+                                  UserAvatar(
+                                    photoUrl: photoUrl,
+                                    displayName: displayName.isNotEmpty
+                                        ? displayName
+                                        : 'User',
+                                    radius: 34,
                                   ),
-                                  Text(
-                                    'Enable Google Drive backups & Splitwise group sharing',
-                                    style: TextStyle(fontSize: 11),
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: theme
+                                              .colorScheme
+                                              .surfaceContainerHigh,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: _isUpdatingAvatar
+                                          ? const SizedBox(
+                                              width: 12,
+                                              height: 12,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.camera_alt_rounded,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            FilledButton.icon(
-                              onPressed: _handleConnectGoogleAccount,
-                              icon: const Icon(Icons.login_rounded, size: 14),
-                              label: const Text('Connect', style: TextStyle(fontSize: 12)),
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    isConnected ? email : 'Local Guest Account',
+                                    style: TextStyle(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_rounded),
+                              onPressed: () => _openEditNameDialog(displayName),
+                              tooltip: 'Edit Name',
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ],
+                        if (!isConnected) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer
+                                  .withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.cloud_upload_rounded,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'Connect Google Account',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Enable Google Drive backups & Splitwise group sharing',
+                                        style: TextStyle(fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton.icon(
+                                  onPressed: _handleConnectGoogleAccount,
+                                  icon: const Icon(
+                                    Icons.login_rounded,
+                                    size: 14,
+                                  ),
+                                  label: const Text(
+                                    'Connect',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 32),
+                const SizedBox(height: 32),
 
-            // ── App Settings Section ─────────────────────────────────
-            Text(
-              'App Settings',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Material(
-              color: theme.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  Builder(
-                    builder: (ctx) {
-                      final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                // ── App Settings Section ─────────────────────────────────
+                Text(
+                  'App Settings',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Material(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      Builder(
+                        builder: (ctx) {
+                          final isDark =
+                              Theme.of(ctx).brightness == Brightness.dark;
 
-                      return ListTile(
+                          return ListTile(
+                            leading: Icon(
+                              isDark
+                                  ? Icons.nightlight_round
+                                  : Icons.wb_sunny_rounded,
+                              color: theme.colorScheme.primary,
+                            ),
+                            title: const Text(
+                              'Dark Mode',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            trailing: Switch(
+                              value: isDark,
+                              onChanged: (val) {
+                                try {
+                                  ctx.read<ThemeProvider>().toggleTheme();
+                                } catch (_) {}
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (ctx) => CategoriesScreen(
+                                categories: widget.categories,
+                                onAddCategory: widget.onAddCategory,
+                                onDeleteCategory: widget.onDeleteCategory,
+                              ),
+                            ),
+                          );
+                        },
                         leading: Icon(
-                          isDark ? Icons.nightlight_round : Icons.wb_sunny_rounded,
+                          Icons.category_rounded,
                           color: theme.colorScheme.primary,
                         ),
-                        title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.bold)),
-                        trailing: Switch(
-                          value: isDark,
-                          onChanged: (val) {
-                            try {
-                              ctx.read<ThemeProvider>().toggleTheme();
-                            } catch (_) {}
-                          },
+                        title: const Text(
+                          'Manage Categories',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                      );
-                    },
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (ctx) => CategoriesScreen(
-                            categories: widget.categories,
-                            onAddCategory: widget.onAddCategory,
-                            onDeleteCategory: widget.onDeleteCategory,
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Icon(
+                          Icons.cloud_sync_rounded,
+                          color: theme.colorScheme.primary,
+                        ),
+                        title: const Text(
+                          'Sync Status',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          isConnected
+                              ? 'Google Drive · $email'
+                              : 'Local Storage · Connect Google Account to backup',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
                           ),
                         ),
-                      );
-                    },
-                    leading: Icon(Icons.category_rounded, color: theme.colorScheme.primary),
-                    title: const Text('Manage Categories', style: TextStyle(fontWeight: FontWeight.bold)),
-                    trailing: const Icon(Icons.chevron_right_rounded),
+                        trailing: isConnected
+                            ? const Icon(
+                                Icons.check_circle_rounded,
+                                color: Color(0xFF1DD1A1),
+                              )
+                            : TextButton(
+                                onPressed: _handleConnectGoogleAccount,
+                                child: const Text('Connect'),
+                              ),
+                      ),
+                    ],
                   ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: Icon(Icons.cloud_sync_rounded, color: theme.colorScheme.primary),
-                    title: const Text('Sync Status', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                      isConnected
-                          ? 'Google Drive · $email'
-                          : 'Local Storage · Connect Google Account to backup',
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
-                    ),
-                    trailing: isConnected
-                        ? const Icon(Icons.check_circle_rounded, color: Color(0xFF1DD1A1))
-                        : TextButton(
-                            onPressed: _handleConnectGoogleAccount,
-                            child: const Text('Connect'),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
+                ),
+                const SizedBox(height: 32),
 
-            // ── Account Actions Section (Above Logout) ───────────────
-            if (authProvider?.isAuthenticated == true) ...[
-              Text(
-                'Account Actions',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Material(
-                color: theme.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(20),
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.delete_forever_rounded,
-                      color: theme.colorScheme.error,
-                      size: 20,
-                    ),
-                  ),
-                  title: Text(
-                    'Delete Account',
-                    style: TextStyle(
-                      color: theme.colorScheme.error,
+                // ── Account Actions Section (Above Logout) ───────────────
+                if (authProvider?.isAuthenticated == true) ...[
+                  Text(
+                    'Account Actions',
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  subtitle: const Text(
-                    'Clears all local, Google Drive, and Splitwise data.',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  onTap: _isDeletingAccount ? null : _handleDeleteAccount,
-                  trailing: _isDeletingAccount
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.chevron_right_rounded,
-                          color: theme.colorScheme.error,
+                  const SizedBox(height: 12),
+                  Material(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(20),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer,
+                          shape: BoxShape.circle,
                         ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                        child: Icon(
+                          Icons.delete_forever_rounded,
+                          color: theme.colorScheme.error,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        'Delete Account',
+                        style: TextStyle(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Clears all local, Google Drive, and Splitwise data.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      onTap: _isDeletingAccount ? null : _handleDeleteAccount,
+                      trailing: _isDeletingAccount
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              Icons.chevron_right_rounded,
+                              color: theme.colorScheme.error,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
 
-            // ── Logout Button ────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _handleLogout,
-                icon: const Icon(Icons.logout_rounded),
-                label: const Text('Logout'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.errorContainer,
-                  foregroundColor: theme.colorScheme.onErrorContainer,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                // ── Logout Button ────────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _handleLogout,
+                    icon: const Icon(Icons.logout_rounded),
+                    label: const Text('Logout'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.errorContainer,
+                      foregroundColor: theme.colorScheme.onErrorContainer,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 60),
+              ],
             ),
-            const SizedBox(height: 60),
-          ],
+          ),
         ),
       ),
-    ),
-  ),
-);
+    );
   }
 }
 

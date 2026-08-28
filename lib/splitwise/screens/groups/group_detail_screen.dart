@@ -13,7 +13,6 @@ import 'package:expenses/splitwise/widgets/balance_summary.dart';
 import 'package:expenses/splitwise/screens/expenses/add_expense_screen.dart';
 import 'package:expenses/splitwise/widgets/user_avatar.dart';
 import 'package:expenses/add_expense_sheet.dart';
-import 'package:expenses/sample_data.dart';
 import 'package:expenses/widgets/custom_modal_dialog.dart';
 
 class GroupDetailScreen extends StatefulWidget {
@@ -628,7 +627,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
                     builder: (sheetCtx) => AddExpenseSheet(
-                      categories: widget.categories ?? getInitialCategories(),
+                      categories: widget.categories ?? getDefaultCategories(),
                       currencySymbol: '₹',
                       onAddExpense: (newExpense) {
                         // Pass pending newExpense to AddExpenseScreen
