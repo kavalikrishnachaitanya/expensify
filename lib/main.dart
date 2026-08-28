@@ -106,10 +106,17 @@ class ExpenditureApp extends StatelessWidget {
               scaffoldBackgroundColor: const Color(0xFF0D0E15),
               fontFamily: 'Roboto',
             ),
-            home: LoginScreen(
-              isDarkMode: themeProvider.isDarkMode,
-              onToggleTheme: themeProvider.toggleTheme,
-            ),
+            home: (isFirebaseInitialized && FirebaseAuth.instance.currentUser != null)
+                ? MainScreen(
+                    isDarkMode: themeProvider.isDarkMode,
+                    onToggleTheme: themeProvider.toggleTheme,
+                    driveService: GoogleDriveService(),
+                    isGuestMode: false,
+                  )
+                : LoginScreen(
+                    isDarkMode: themeProvider.isDarkMode,
+                    onToggleTheme: themeProvider.toggleTheme,
+                  ),
           );
         },
       ),

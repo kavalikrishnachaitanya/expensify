@@ -20,13 +20,14 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final GoogleDriveService _driveService = GoogleDriveService();
   bool _isLoading = true;
+  bool _isNavigating = false;
 
   @override
   void initState() {
     super.initState();
     _checkExistingLogin();
     FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null && mounted) {
+      if (user != null && mounted && !_isNavigating) {
         _navigateToHome(isGuest: false);
       }
     });
@@ -72,7 +73,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _navigateToHome({required bool isGuest}) {
-    if (!mounted) return;
+    if (!mounted || _isNavigating) return;
+    _isNavigating = true;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => MainScreen(
