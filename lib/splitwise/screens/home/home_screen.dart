@@ -118,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return RefreshIndicator(
           onRefresh: () async => _loadGroups(),
           child: ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             itemCount: groupProvider.groups.length,
             itemBuilder: (context, index) {
               final group = groupProvider.groups[index];

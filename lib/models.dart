@@ -139,6 +139,146 @@ class SavingsRecord {
       );
 }
 
+class CreditCard {
+  final String id;
+  final String bankName;
+  final String cardName;
+  final String last4Digits;
+  final String cardNetwork; // Visa, Mastercard, RuPay, Amex, etc.
+  final double creditLimit;
+  final int? billingCycleDay; // e.g. 15th of each month
+  final int? paymentDueDay; // e.g. 5th of each month
+  final int colorHex;
+  final bool isSharedLimit;
+
+  CreditCard({
+    required this.id,
+    required this.bankName,
+    required this.cardName,
+    required this.last4Digits,
+    this.cardNetwork = 'Visa',
+    this.creditLimit = 0.0,
+    this.billingCycleDay,
+    this.paymentDueDay,
+    this.colorHex = 0xFF1E272E,
+    this.isSharedLimit = true,
+  });
+
+  CreditCard copyWith({
+    String? id,
+    String? bankName,
+    String? cardName,
+    String? last4Digits,
+    String? cardNetwork,
+    double? creditLimit,
+    int? billingCycleDay,
+    int? paymentDueDay,
+    int? colorHex,
+    bool? isSharedLimit,
+  }) {
+    return CreditCard(
+      id: id ?? this.id,
+      bankName: bankName ?? this.bankName,
+      cardName: cardName ?? this.cardName,
+      last4Digits: last4Digits ?? this.last4Digits,
+      cardNetwork: cardNetwork ?? this.cardNetwork,
+      creditLimit: creditLimit ?? this.creditLimit,
+      billingCycleDay: billingCycleDay ?? this.billingCycleDay,
+      paymentDueDay: paymentDueDay ?? this.paymentDueDay,
+      colorHex: colorHex ?? this.colorHex,
+      isSharedLimit: isSharedLimit ?? this.isSharedLimit,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'bankName': bankName,
+        'cardName': cardName,
+        'last4Digits': last4Digits,
+        'cardNetwork': cardNetwork,
+        'creditLimit': creditLimit,
+        'billingCycleDay': billingCycleDay,
+        'paymentDueDay': paymentDueDay,
+        'colorHex': colorHex,
+        'isSharedLimit': isSharedLimit,
+      };
+
+  factory CreditCard.fromJson(Map<String, dynamic> json) => CreditCard(
+        id: json['id'],
+        bankName: json['bankName'] ?? '',
+        cardName: json['cardName'] ?? '',
+        last4Digits: json['last4Digits'] ?? '',
+        cardNetwork: json['cardNetwork'] ?? 'Visa',
+        creditLimit: (json['creditLimit'] as num?)?.toDouble() ?? 0.0,
+        billingCycleDay: json['billingCycleDay'],
+        paymentDueDay: json['paymentDueDay'],
+        colorHex: json['colorHex'] ?? 0xFF1E272E,
+        isSharedLimit: json['isSharedLimit'] ?? true,
+      );
+}
+
+class CreditCardRepayment {
+  final String id;
+  final String creditCardId;
+  final double amount;
+  final DateTime date;
+  final PaymentMethod paymentMethod;
+  final String paymentSource; // e.g. "UPI / Wallet", "Salary Account"
+  final String? note;
+
+  CreditCardRepayment({
+    required this.id,
+    required this.creditCardId,
+    required this.amount,
+    required this.date,
+    this.paymentMethod = PaymentMethod.upi,
+    String? paymentSource,
+    this.note,
+  }) : paymentSource = (paymentSource != null && paymentSource.trim().isNotEmpty)
+            ? paymentSource.trim()
+            : paymentMethod.label;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'creditCardId': creditCardId,
+        'amount': amount,
+        'date': date.toIso8601String(),
+        'paymentMethod': paymentMethod.name,
+        'paymentSource': paymentSource,
+        'note': note,
+      };
+
+  factory CreditCardRepayment.fromJson(Map<String, dynamic> json) {
+    PaymentMethod method = PaymentMethod.upi;
+    if (json['paymentMethod'] != null) {
+      method = PaymentMethod.values.firstWhere(
+        (m) => m.name == json['paymentMethod'],
+        orElse: () => PaymentMethod.upi,
+      );
+    } else if (json['paymentSource'] != null) {
+      final src = json['paymentSource'].toString().toLowerCase();
+      if (src.contains('cash')) {
+        method = PaymentMethod.cash;
+      } else if (src.contains('debit')) {
+        method = PaymentMethod.debitCard;
+      } else if (src.contains('net') || src.contains('bank')) {
+        method = PaymentMethod.netBanking;
+      } else {
+        method = PaymentMethod.upi;
+      }
+    }
+    return CreditCardRepayment(
+      id: json['id'],
+      creditCardId: json['creditCardId'],
+      amount: (json['amount'] as num).toDouble(),
+      date: DateTime.parse(json['date']),
+      paymentMethod: method,
+      paymentSource: json['paymentSource'] ?? method.label,
+      note: json['note'],
+    );
+  }
+}
+
 class Expense {
   final String id;
   final String title;
@@ -148,6 +288,7 @@ class Expense {
   final PaymentMethod paymentMethod;
   final String? note;
   final String? linkedTransactionId;
+  final String? creditCardId;
 
   Expense({
     required this.id,
@@ -158,6 +299,7 @@ class Expense {
     this.paymentMethod = PaymentMethod.creditCard,
     this.note,
     this.linkedTransactionId,
+    this.creditCardId,
   });
 
   Expense copyWith({
@@ -169,6 +311,7 @@ class Expense {
     PaymentMethod? paymentMethod,
     String? note,
     String? linkedTransactionId,
+    String? creditCardId,
   }) {
     return Expense(
       id: id ?? this.id,
@@ -179,6 +322,7 @@ class Expense {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       note: note ?? this.note,
       linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
+      creditCardId: creditCardId ?? this.creditCardId,
     );
   }
 
@@ -191,6 +335,7 @@ class Expense {
         'paymentMethod': paymentMethod.name,
         'note': note,
         'linkedTransactionId': linkedTransactionId,
+        'creditCardId': creditCardId,
       };
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
@@ -199,9 +344,13 @@ class Expense {
         amount: (json['amount'] as num).toDouble(),
         date: DateTime.parse(json['date']),
         categoryId: json['categoryId'],
-        paymentMethod: PaymentMethod.values.firstWhere((e) => e.name == json['paymentMethod']),
+        paymentMethod: PaymentMethod.values.firstWhere(
+          (e) => e.name == json['paymentMethod'],
+          orElse: () => PaymentMethod.creditCard,
+        ),
         note: json['note'],
         linkedTransactionId: json['linkedTransactionId'],
+        creditCardId: json['creditCardId'],
       );
 }
 

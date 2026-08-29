@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,6 +14,7 @@ import 'dart:convert';
 import 'settings_screen.dart';
 import 'login_screen.dart';
 import 'services/google_drive_service.dart';
+import 'credit_cards_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -51,11 +54,24 @@ void main() async {
 }
 
 class ThemeProvider with ChangeNotifier {
-  bool _isDarkMode = true;
-  bool get isDarkMode => _isDarkMode;
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
+
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
+
+  void setThemeMode(ThemeMode mode) {
+    _themeMode = mode;
+    notifyListeners();
+  }
 
   void toggleTheme() {
-    _isDarkMode = !_isDarkMode;
+    if (_themeMode == ThemeMode.system) {
+      _themeMode = ThemeMode.dark;
+    } else if (_themeMode == ThemeMode.dark) {
+      _themeMode = ThemeMode.light;
+    } else {
+      _themeMode = ThemeMode.system;
+    }
     notifyListeners();
   }
 }
@@ -81,9 +97,7 @@ class ExpenditureApp extends StatelessWidget {
           return MaterialApp(
             title: 'Expenditure Calculator & Tracker',
             debugShowCheckedModeBanner: false,
-            themeMode: themeProvider.isDarkMode
-                ? ThemeMode.dark
-                : ThemeMode.light,
+            themeMode: themeProvider.themeMode,
             theme: ThemeData(
               useMaterial3: true,
               brightness: Brightness.light,
@@ -106,17 +120,10 @@ class ExpenditureApp extends StatelessWidget {
               scaffoldBackgroundColor: const Color(0xFF0D0E15),
               fontFamily: 'Roboto',
             ),
-            home: (isFirebaseInitialized && FirebaseAuth.instance.currentUser != null)
-                ? MainScreen(
-                    isDarkMode: themeProvider.isDarkMode,
-                    onToggleTheme: themeProvider.toggleTheme,
-                    driveService: GoogleDriveService(),
-                    isGuestMode: false,
-                  )
-                : LoginScreen(
-                    isDarkMode: themeProvider.isDarkMode,
-                    onToggleTheme: themeProvider.toggleTheme,
-                  ),
+            home: LoginScreen(
+              isDarkMode: themeProvider.isDarkMode,
+              onToggleTheme: themeProvider.toggleTheme,
+            ),
           );
         },
       ),
@@ -168,6 +175,31 @@ class _MainScreenState extends State<MainScreen> {
   double _totalSavings = 0.0;
   final List<SavingsRecord> _savingsHistory = [];
   final List<VaultGoal> _vaultGoals = [];
+  final List<CreditCard> _creditCards = [];
+  final List<CreditCardRepayment> _creditCardRepayments = [];
+
+  // Sync Toast State (Parallel to FAB)
+  bool _showSyncToast = false;
+  String _syncToastMsg = '';
+  bool _syncToastSuccess = true;
+  Timer? _syncToastTimer;
+
+  void _triggerSyncToast(String msg, {bool isSuccess = true}) {
+    _syncToastTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _showSyncToast = true;
+      _syncToastMsg = msg;
+      _syncToastSuccess = isSuccess;
+    });
+    _syncToastTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showSyncToast = false;
+        });
+      }
+    });
+  }
 
   void _addSavingsTransaction(
     double amount,
@@ -194,6 +226,63 @@ class _MainScreenState extends State<MainScreen> {
     _syncToDrive();
   }
 
+  void _addCreditCard(CreditCard card) {
+    setState(() {
+      _creditCards.add(card);
+    });
+    _syncToDrive();
+  }
+
+  void _updateCreditCard(CreditCard card) {
+    setState(() {
+      final idx = _creditCards.indexWhere((c) => c.id == card.id);
+      if (idx != -1) _creditCards[idx] = card;
+    });
+    _syncToDrive();
+  }
+
+  void _deleteCreditCard(String cardId) {
+    setState(() {
+      _creditCards.removeWhere((c) => c.id == cardId);
+      _creditCardRepayments.removeWhere((r) => r.creditCardId == cardId);
+    });
+    _syncToDrive();
+  }
+
+  void _addCreditCardRepayment(CreditCardRepayment repayment) {
+    setState(() {
+      _creditCardRepayments.insert(0, repayment);
+    });
+    _syncToDrive();
+  }
+
+  void _deleteCreditCardRepayment(String id) {
+    setState(() {
+      _creditCardRepayments.removeWhere((r) => r.id == id);
+    });
+    _syncToDrive();
+  }
+
+  void _openCreditCardsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => CreditCardsScreen(
+          creditCards: _creditCards,
+          expenses: _expenses,
+          repayments: _creditCardRepayments,
+          currencySymbol: _currencySymbol,
+          onAddCard: _addCreditCard,
+          onUpdateCard: _updateCreditCard,
+          onDeleteCard: _deleteCreditCard,
+          onAddRepayment: _addCreditCardRepayment,
+          onDeleteRepayment: _deleteCreditCardRepayment,
+          onDeleteExpense: _deleteExpense,
+          onRefresh: _hardRefreshAndSync,
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -217,57 +306,117 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  Future<void> _hardRefreshAndSync() async {
+    try {
+      if (!widget.driveService.isDriveConnected && !widget.isGuestMode) {
+        final silentSuccess = await widget.driveService.signInSilently();
+        if (!silentSuccess && kIsWeb) {
+          await widget.driveService.signIn();
+        }
+      }
+      await _loadFromDrive();
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && mounted) {
+        try {
+          context.read<split_group.GroupProvider>().loadUserGroups(user.uid);
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        final isConnected = widget.driveService.isDriveConnected;
+        _triggerSyncToast(
+          isConnected ? 'Data synced & refreshed!' : 'Drive not connected!',
+          isSuccess: isConnected,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error during hard refresh: $e');
+      if (mounted) {
+        _triggerSyncToast('Sync failed: $e', isSuccess: false);
+      }
+    }
+  }
+
+  void _populateFromJson(String jsonStr) {
+    try {
+      final data = jsonDecode(jsonStr);
+      setState(() {
+        _userName =
+            data['userName'] ?? widget.driveService.userDisplayName ?? 'User';
+        _totalSavings = (data['totalSavings'] ?? 0.0).toDouble();
+
+        if (data['categories'] != null && (data['categories'] as List).isNotEmpty) {
+          _categories.clear();
+          _categories.addAll(
+            (data['categories'] as List).map(
+              (e) => ExpenseCategory.fromJson(e),
+            ),
+          );
+        }
+        if (data['expenses'] != null) {
+          _expenses.clear();
+          _expenses.addAll(
+            (data['expenses'] as List).map((e) => Expense.fromJson(e)),
+          );
+        }
+        if (data['savingsHistory'] != null) {
+          _savingsHistory.clear();
+          _savingsHistory.addAll(
+            (data['savingsHistory'] as List).map(
+              (e) => SavingsRecord.fromJson(e),
+            ),
+          );
+        }
+        if (data['monthlyIncomeMap'] != null) {
+          _monthlyIncomeMap.clear();
+          final map = data['monthlyIncomeMap'] as Map<String, dynamic>;
+          map.forEach((key, value) {
+            _monthlyIncomeMap[key] = (value as List)
+                .map((e) => IncomeRecord.fromJson(e))
+                .toList();
+          });
+        }
+        if (data['vaultGoals'] != null) {
+          _vaultGoals.clear();
+          _vaultGoals.addAll(
+            (data['vaultGoals'] as List).map((e) => VaultGoal.fromJson(e)),
+          );
+        }
+        if (data['creditCards'] != null) {
+          _creditCards.clear();
+          _creditCards.addAll(
+            (data['creditCards'] as List).map((e) => CreditCard.fromJson(e)),
+          );
+        }
+        if (data['creditCardRepayments'] != null) {
+          _creditCardRepayments.clear();
+          _creditCardRepayments.addAll(
+            (data['creditCardRepayments'] as List)
+                .map((e) => CreditCardRepayment.fromJson(e)),
+          );
+        }
+      });
+    } catch (e) {
+      debugPrint('Error parsing data: $e');
+    }
+  }
+
   Future<void> _loadFromDrive() async {
+    if (!widget.driveService.isDriveConnected && !widget.isGuestMode) {
+      await widget.driveService.signInSilently();
+    }
+    if (!widget.driveService.isDriveConnected && !widget.isGuestMode) {
+      // Fallback: load local cached data if present
+      final cached = await widget.driveService.getCachedData();
+      if (cached != null && cached.isNotEmpty) {
+        _populateFromJson(cached);
+      }
+      return;
+    }
     final jsonStr = await widget.driveService.downloadData();
     if (jsonStr != null && jsonStr.isNotEmpty) {
-      try {
-        final data = jsonDecode(jsonStr);
-        setState(() {
-          _userName =
-              data['userName'] ?? widget.driveService.userDisplayName ?? 'User';
-          _totalSavings = (data['totalSavings'] ?? 0.0).toDouble();
-
-          if (data['categories'] != null) {
-            _categories.clear();
-            _categories.addAll(
-              (data['categories'] as List).map(
-                (e) => ExpenseCategory.fromJson(e),
-              ),
-            );
-          }
-          if (data['expenses'] != null) {
-            _expenses.clear();
-            _expenses.addAll(
-              (data['expenses'] as List).map((e) => Expense.fromJson(e)),
-            );
-          }
-          if (data['savingsHistory'] != null) {
-            _savingsHistory.clear();
-            _savingsHistory.addAll(
-              (data['savingsHistory'] as List).map(
-                (e) => SavingsRecord.fromJson(e),
-              ),
-            );
-          }
-          if (data['monthlyIncomeMap'] != null) {
-            _monthlyIncomeMap.clear();
-            final map = data['monthlyIncomeMap'] as Map<String, dynamic>;
-            map.forEach((key, value) {
-              _monthlyIncomeMap[key] = (value as List)
-                  .map((e) => IncomeRecord.fromJson(e))
-                  .toList();
-            });
-          }
-          if (data['vaultGoals'] != null) {
-            _vaultGoals.clear();
-            _vaultGoals.addAll(
-              (data['vaultGoals'] as List).map((e) => VaultGoal.fromJson(e)),
-            );
-          }
-        });
-      } catch (e) {
-        debugPrint('Error parsing data: $e');
-      }
+      _populateFromJson(jsonStr);
     } else if (widget.driveService.isDriveConnected && !widget.isGuestMode) {
       // First time, user has no data in drive and no local cache. Sync initial data to drive.
       setState(() {
@@ -288,6 +437,9 @@ class _MainScreenState extends State<MainScreen> {
         (key, value) => MapEntry(key, value.map((i) => i.toJson()).toList()),
       ),
       'vaultGoals': _vaultGoals.map((g) => g.toJson()).toList(),
+      'creditCards': _creditCards.map((c) => c.toJson()).toList(),
+      'creditCardRepayments':
+          _creditCardRepayments.map((r) => r.toJson()).toList(),
     };
     await widget.driveService.uploadData(jsonEncode(data));
   }
@@ -488,7 +640,9 @@ class _MainScreenState extends State<MainScreen> {
     bool deleteFromSplitwise = isLinkedToSplitwise;
     final itemTitle = isExpense
         ? item.title
-        : (item as IncomeRecord).sourceName;
+        : (item is IncomeRecord
+            ? item.sourceName
+            : 'Credit Card Bill Payment');
 
     final result = await showDialog<bool>(
       context: context,
@@ -497,7 +651,11 @@ class _MainScreenState extends State<MainScreen> {
           icon: Icons.delete_outline_rounded,
           iconColor: theme.colorScheme.error,
           iconBackgroundColor: theme.colorScheme.errorContainer,
-          title: isExpense ? 'Delete Expense' : 'Delete Income',
+          title: isExpense
+              ? 'Delete Expense'
+              : (item is IncomeRecord
+                  ? 'Delete Income'
+                  : 'Delete Card Repayment'),
           subtitle: 'Are you sure you want to delete "$itemTitle"?',
           content: isLinkedToSplitwise
               ? Padding(
@@ -555,8 +713,10 @@ class _MainScreenState extends State<MainScreen> {
             debugPrint('Error deleting linked splitwise expense: $e');
           }
         }
-      } else {
-        _deleteIncome((item as IncomeRecord).id);
+      } else if (item is IncomeRecord) {
+        _deleteIncome(item.id);
+      } else if (item is CreditCardRepayment) {
+        _deleteCreditCardRepayment(item.id);
       }
       return true;
     }
@@ -635,6 +795,7 @@ class _MainScreenState extends State<MainScreen> {
         categories: _categories,
         currencySymbol: _currencySymbol,
         expenseToEdit: expenseToEdit,
+        creditCards: _creditCards,
         onAddExpense: _addExpense,
       ),
     );
@@ -701,6 +862,7 @@ class _MainScreenState extends State<MainScreen> {
           onToggleTheme: widget.onToggleTheme,
           driveService: widget.driveService,
           isGuestMode: widget.isGuestMode,
+          onOpenCreditCards: _openCreditCardsScreen,
         ),
       ),
     );
@@ -828,6 +990,7 @@ class _MainScreenState extends State<MainScreen> {
         final List<Widget> tabPages = [
           _buildAnalyticsTab(theme, isWideScreen),
           _buildTransactionsTab(theme, isWideScreen: isWideScreen),
+          _buildSplitTab(),
           SavingsVaultView(
             totalSavings: _totalSavings,
             savingsHistory: _savingsHistory,
@@ -852,27 +1015,89 @@ class _MainScreenState extends State<MainScreen> {
             onDeleteGoal: _deleteVaultGoal,
             isWideScreen: isWideScreen,
           ),
-          _buildSplitTab(),
         ];
 
-        // ── FAB (same logic for both wide & narrow) ────────────────────────
+        // ── FAB & Parallel Sync Toast Pill ─────────────────────────────────
+        final syncToastPill = AnimatedOpacity(
+          opacity: _showSyncToast ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeInOut,
+          child: AnimatedSlide(
+            offset: _showSyncToast ? Offset.zero : const Offset(0.12, 0),
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            child: _showSyncToast
+                ? Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _syncToastSuccess
+                          ? const Color(0xFF1DD1A1)
+                          : const Color(0xFFE17055),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(isWideScreen ? 30 : 50),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _syncToastSuccess
+                              ? Icons.cloud_done_rounded
+                              : Icons.cloud_off_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _syncToastMsg,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        );
+
         Widget? fab;
         if (_selectedTabIndex == 3) {
+          // Vault tab: No FAB (actions are embedded in-page)
+          fab = _showSyncToast ? syncToastPill : null;
+        } else if (_selectedTabIndex == 2) {
+          // Split tab: New Group FAB
           fab = (authProvider?.isAuthenticated == true && !widget.isGuestMode)
-              ? FloatingActionButton.extended(
-                  heroTag: 'split_create_group_fab',
-                  onPressed: () =>
-                      split_create_group.showCreateGroupSheet(context),
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                  icon: const Icon(Icons.group_add_rounded),
-                  label: const Text(
-                    'New Group',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    syncToastPill,
+                    FloatingActionButton.extended(
+                      heroTag: 'split_create_group_fab',
+                      onPressed: () =>
+                          split_create_group.showCreateGroupSheet(context),
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      icon: const Icon(Icons.group_add_rounded),
+                      label: const Text(
+                        'New Group',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 )
-              : null;
+              : (_showSyncToast ? syncToastPill : null);
         } else {
+          // Analytics (0) & History (1) tabs: Add Income/Expense FAB
           fab = Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -909,17 +1134,24 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              FloatingActionButton(
-                heroTag: 'main_fab',
-                onPressed: () => setState(() => _isFabOpen = !_isFabOpen),
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                elevation: 4,
-                child: AnimatedRotation(
-                  turns: _isFabOpen ? 0.125 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(Icons.add_rounded, size: 28),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  syncToastPill,
+                  FloatingActionButton(
+                    heroTag: 'main_fab',
+                    onPressed: () => setState(() => _isFabOpen = !_isFabOpen),
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    elevation: 4,
+                    child: AnimatedRotation(
+                      turns: _isFabOpen ? 0.125 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.add_rounded, size: 28),
+                    ),
+                  ),
+                ],
               ),
             ],
           );
@@ -957,6 +1189,12 @@ class _MainScreenState extends State<MainScreen> {
             ],
           ),
           actions: [
+            if (isWideScreen || kIsWeb)
+              IconButton(
+                icon: const Icon(Icons.sync_rounded),
+                onPressed: _hardRefreshAndSync,
+                tooltip: 'Sync with Google Drive',
+              ),
             IconButton(
               icon: const Icon(Icons.settings_rounded),
               onPressed: _openSettingsScreen,
@@ -994,17 +1232,17 @@ class _MainScreenState extends State<MainScreen> {
                     NavigationRailDestination(
                       icon: Icon(Icons.receipt_long_outlined),
                       selectedIcon: Icon(Icons.receipt_long_rounded),
-                      label: Text('Transactions'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.savings_outlined),
-                      selectedIcon: Icon(Icons.savings_rounded),
-                      label: Text('Vault'),
+                      label: Text('History'),
                     ),
                     NavigationRailDestination(
                       icon: Icon(Icons.group_outlined),
                       selectedIcon: Icon(Icons.group_rounded),
                       label: Text('Split'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.savings_outlined),
+                      selectedIcon: Icon(Icons.savings_rounded),
+                      label: Text('Vault'),
                     ),
                   ],
                 ),
@@ -1021,44 +1259,234 @@ class _MainScreenState extends State<MainScreen> {
           );
         }
 
-        // ── NARROW / MOBILE layout: bottom NavigationBar ───────────────────
+        // ── NARROW / MOBILE layout: floating glassmorphic NavigationBar ───
         return Scaffold(
+          extendBody: true,
           appBar: appBar,
           floatingActionButton: fab,
           body: IndexedStack(index: _selectedTabIndex, children: tabPages),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _selectedTabIndex,
-            onDestinationSelected: (idx) {
-              setState(() {
-                _selectedTabIndex = idx;
-                _isFabOpen = false;
-              });
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.pie_chart_outline_rounded),
-                selectedIcon: Icon(Icons.pie_chart_rounded),
-                label: 'Analytics',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.receipt_long_outlined),
-                selectedIcon: Icon(Icons.receipt_long_rounded),
-                label: 'Transactions',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.savings_outlined),
-                selectedIcon: Icon(Icons.savings_rounded),
-                label: 'Vault',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.group_outlined),
-                selectedIcon: Icon(Icons.group_rounded),
-                label: 'Split',
-              ),
-            ],
-          ),
+          bottomNavigationBar: _buildAdvancedFloatingNavBar(theme),
         );
       },
+    );
+  }
+
+  Widget _buildAdvancedFloatingNavBar(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    final primaryColor = theme.colorScheme.primary;
+
+    final navItems = [
+      (
+        icon: Icons.pie_chart_outline_rounded,
+        activeIcon: Icons.pie_chart_rounded,
+        label: 'Analytics',
+      ),
+      (
+        icon: Icons.receipt_long_outlined,
+        activeIcon: Icons.receipt_long_rounded,
+        label: 'History',
+      ),
+      (
+        icon: Icons.group_outlined,
+        activeIcon: Icons.group_rounded,
+        label: 'Split',
+      ),
+      (
+        icon: Icons.savings_outlined,
+        activeIcon: Icons.savings_rounded,
+        label: 'Vault',
+      ),
+    ];
+
+    final alignX = -1.0 + (_selectedTabIndex * (2.0 / (navItems.length - 1)));
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: (bottomInset > 0 ? (bottomInset > 20 ? bottomInset * 0.4 : bottomInset) : 0) + 12,
+      ),
+      child: Container(
+        height: 64,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(isDark ? 90 : 25),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(34),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xE6141722)
+                    : const Color(0xF2FFFFFF),
+                borderRadius: BorderRadius.circular(34),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withAlpha(25)
+                      : Colors.black.withAlpha(14),
+                  width: 1.2,
+                ),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // ── Sliding Chromatic Liquid Glass Capsule ─────────────────
+                  AnimatedAlign(
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(alignX, 0.0),
+                    child: FractionallySizedBox(
+                      widthFactor: 1.0 / navItems.length,
+                      heightFactor: 0.88,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(26),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: isDark
+                                ? [
+                                    Colors.white.withAlpha(35),
+                                    Colors.white.withAlpha(12),
+                                    Colors.white.withAlpha(5),
+                                  ]
+                                : [
+                                    Colors.white.withAlpha(235),
+                                    Colors.white.withAlpha(140),
+                                    Colors.white.withAlpha(80),
+                                  ],
+                          ),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withAlpha(45)
+                                : primaryColor.withAlpha(50),
+                            width: 1.3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryColor.withAlpha(isDark ? 55 : 35),
+                              blurRadius: 14,
+                              spreadRadius: 1,
+                              offset: const Offset(0, 2),
+                            ),
+                            // Top & bottom glass refraction highlights
+                            BoxShadow(
+                              color: Colors.white.withAlpha(isDark ? 30 : 60),
+                              blurRadius: 6,
+                              offset: const Offset(-2, -2),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(26),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.white.withAlpha(isDark ? 45 : 130),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ── Tab Icons & Labels ────────────────────────────────────
+                  Row(
+                    children: List.generate(navItems.length, (idx) {
+                      final item = navItems[idx];
+                      final isSelected = _selectedTabIndex == idx;
+
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _selectedTabIndex = idx;
+                              _isFabOpen = false;
+                            });
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                AnimatedScale(
+                                  scale: isSelected ? 1.15 : 1.0,
+                                  duration: const Duration(milliseconds: 260),
+                                  curve: Curves.easeOutBack,
+                                  child: isSelected
+                                      ? Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: primaryColor.withAlpha(isDark ? 60 : 30),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            item.activeIcon,
+                                            size: 19,
+                                            color: primaryColor,
+                                          ),
+                                        )
+                                      : Icon(
+                                          item.icon,
+                                          size: 21,
+                                          color: isDark
+                                              ? Colors.white60
+                                              : const Color(0xFF2D3436).withAlpha(180),
+                                        ),
+                                ),
+                                const SizedBox(height: 2),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: AnimatedDefaultTextStyle(
+                                      duration: const Duration(milliseconds: 200),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                        color: isSelected
+                                            ? (isDark ? Colors.white : primaryColor)
+                                            : (isDark ? Colors.white54 : const Color(0xFF636E72)),
+                                      ),
+                                      child: Text(
+                                        item.label,
+                                        maxLines: 1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1159,7 +1587,7 @@ class _MainScreenState extends State<MainScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Monthly Income',
+                      'Income',
                       style: TextStyle(color: Colors.white70, fontSize: 11),
                     ),
                     const SizedBox(height: 2),
@@ -1203,25 +1631,57 @@ class _MainScreenState extends State<MainScreen> {
               ),
               Container(width: 1, height: 28, color: Colors.white24),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Daily Avg',
-                      style: TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$_currencySymbol${dailyAvg.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
+              Builder(
+                builder: (context) {
+                  final totalCCDues = _creditCards.fold(0.0, (sum, card) {
+                    final spend = _expenses.where((e) {
+                      if (e.paymentMethod != PaymentMethod.creditCard) return false;
+                      if (e.creditCardId == card.id) return true;
+                      if ((e.creditCardId == null || e.creditCardId!.isEmpty) && _creditCards.length == 1) {
+                        return _creditCards.first.id == card.id;
+                      }
+                      return false;
+                    }).fold(0.0, (s, e) => s + e.amount);
+
+                    final repaid = _creditCardRepayments.where((r) {
+                      if (r.creditCardId == card.id) return true;
+                      if (r.creditCardId.isEmpty && _creditCards.length == 1) {
+                        return _creditCards.first.id == card.id;
+                      }
+                      return false;
+                    }).fold(0.0, (s, r) => s + r.amount);
+
+                    final bal = spend - repaid;
+                    return sum + (bal < 0 ? 0.0 : bal);
+                  });
+
+                  return Expanded(
+                    child: InkWell(
+                      onTap: _openCreditCardsScreen,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Dues',
+                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$_currencySymbol${totalCCDues.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: totalCCDues > 0
+                                  ? const Color(0xFFFFD2D2)
+                                  : Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ),
@@ -1229,22 +1689,9 @@ class _MainScreenState extends State<MainScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Spent ${(progress * 100).toStringAsFixed(1)}% of Income',
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                  Text(
-                    'Salary: $_currencySymbol${monthIncome.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              Text(
+                'Spent ${(progress * 100).toStringAsFixed(1)}% of Income',
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
               ),
               const SizedBox(height: 6),
               ClipRRect(
@@ -1263,6 +1710,55 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: _openCreditCardsScreen,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(30),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Builder(
+                builder: (context) {
+                  final ccExpenses = _monthlyExpenses
+                      .where((e) => e.paymentMethod == PaymentMethod.creditCard)
+                      .toList();
+                  final monthCCSpend =
+                      ccExpenses.fold(0.0, (sum, e) => sum + e.amount);
+
+                  return Row(
+                    children: [
+                      const Icon(
+                        Icons.credit_card_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Credit Card Spend: $_currencySymbol${monthCCSpend.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -1555,9 +2051,19 @@ class _MainScreenState extends State<MainScreen> {
       ],
     );
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.all(isWideScreen ? 24 : 16),
-      child: content,
+    return RefreshIndicator(
+      onRefresh: _hardRefreshAndSync,
+      color: theme.colorScheme.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          isWideScreen ? 24 : 16,
+          isWideScreen ? 24 : 16,
+          isWideScreen ? 24 : 16,
+          isWideScreen ? 24 : 96,
+        ),
+        child: content,
+      ),
     );
   }
 
@@ -2011,7 +2517,35 @@ class _MainScreenState extends State<MainScreen> {
       return matchesQuery && matchesCat;
     }).toList();
 
-    var combinedList = [...filteredExpenses, ...filteredIncomes];
+    final monthRepayments = _creditCardRepayments.where((r) {
+      return r.date.year == _selectedDate.year &&
+          r.date.month == _selectedDate.month;
+    }).toList();
+
+    var filteredRepayments = monthRepayments.where((r) {
+      final card = _creditCards.firstWhere(
+        (c) => c.id == r.creditCardId,
+        orElse: () => CreditCard(
+          id: '',
+          bankName: 'Credit Card',
+          cardName: '',
+          last4Digits: '',
+        ),
+      );
+      final matchesQuery =
+          '${card.bankName} ${card.cardName} ${r.paymentSource} ${r.note ?? ''}'
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase());
+      final matchesCat =
+          _filterCategoryId == null || _filterCategoryId == 'cat_repayment';
+      return matchesQuery && matchesCat;
+    }).toList();
+
+    var combinedList = [
+      ...filteredExpenses,
+      ...filteredIncomes,
+      ...filteredRepayments,
+    ];
     combinedList.sort(
       (a, b) => ((b as dynamic).date as DateTime).compareTo(
         (a as dynamic).date as DateTime,
@@ -2023,6 +2557,13 @@ class _MainScreenState extends State<MainScreen> {
       name: 'Income',
       icon: Icons.account_balance_wallet_rounded,
       color: const Color(0xFF1DD1A1),
+    );
+
+    final repaymentCategory = ExpenseCategory(
+      id: 'cat_repayment',
+      name: 'Repayments',
+      icon: Icons.credit_score_rounded,
+      color: const Color(0xFF0984E3),
     );
 
     final searchField = TextField(
@@ -2063,6 +2604,7 @@ class _MainScreenState extends State<MainScreen> {
             scrollDirection: Axis.horizontal,
             children: [
               FilterChip(
+                showCheckmark: false,
                 label: const Text('All'),
                 selected: _filterCategoryId == null,
                 onSelected: (selected) {
@@ -2073,6 +2615,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const SizedBox(width: 8),
               FilterChip(
+                showCheckmark: false,
                 avatar: Icon(
                   incomeCategory.icon,
                   size: 14,
@@ -2088,11 +2631,30 @@ class _MainScreenState extends State<MainScreen> {
                   });
                 },
               ),
+              const SizedBox(width: 8),
+              FilterChip(
+                showCheckmark: false,
+                avatar: Icon(
+                  repaymentCategory.icon,
+                  size: 14,
+                  color: _filterCategoryId == repaymentCategory.id
+                      ? Colors.white
+                      : repaymentCategory.color,
+                ),
+                label: Text(repaymentCategory.name),
+                selected: _filterCategoryId == repaymentCategory.id,
+                onSelected: (selected) {
+                  setState(() {
+                    _filterCategoryId = selected ? repaymentCategory.id : null;
+                  });
+                },
+              ),
               ..._categories.map((cat) {
                 final isSelected = _filterCategoryId == cat.id;
                 return Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: FilterChip(
+                    showCheckmark: false,
                     avatar: Icon(
                       cat.icon,
                       size: 14,
@@ -2435,6 +2997,167 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 );
+              } else if (item is CreditCardRepayment) {
+                final card = _creditCards.firstWhere(
+                  (c) => c.id == item.creditCardId,
+                  orElse: () => CreditCard(
+                    id: '',
+                    bankName: 'Credit Card',
+                    cardName: 'Repayment',
+                    last4Digits: '••••',
+                  ),
+                );
+
+                return Dismissible(
+                  key: Key(item.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.delete_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  confirmDismiss: (direction) =>
+                      _confirmDeleteExpense(context, item),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Material(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        onTap: _openCreditCardsScreen,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0984E3).withAlpha(40),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.credit_score_rounded,
+                                  color: Color(0xFF0984E3),
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Bill Repayment · ${card.bankName} ${card.cardName}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          '${item.date.day}/${item.date.month}/${item.date.year}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0984E3)
+                                                .withAlpha(30),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'via ${item.paymentSource}',
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF0984E3),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (item.note != null &&
+                                        item.note!.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item.note!,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontStyle: FontStyle.italic,
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '$_currencySymbol${item.amount.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Color(0xFF00B894),
+                                    ),
+                                  ),
+                                  if (isWideScreen || kIsWeb) ...[
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 18,
+                                        color: theme.colorScheme.error,
+                                      ),
+                                      tooltip: 'Delete Repayment',
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: () =>
+                                          _confirmDeleteExpense(context, item),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               }
               return const SizedBox();
             },
@@ -2444,40 +3167,50 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     if (isWideScreen) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: searchField,
-            ),
-            contentColumn,
-          ],
+      return RefreshIndicator(
+        onRefresh: _hardRefreshAndSync,
+        color: theme.colorScheme.primary,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: searchField,
+              ),
+              contentColumn,
+            ],
+          ),
         ),
       );
     }
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          floating: true,
-          snap: true,
-          backgroundColor: theme.colorScheme.surface,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          toolbarHeight: 80,
-          title: searchField,
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: contentColumn,
+    return RefreshIndicator(
+      onRefresh: _hardRefreshAndSync,
+      color: theme.colorScheme.primary,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            backgroundColor: theme.colorScheme.surface,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            automaticallyImplyLeading: false,
+            toolbarHeight: 80,
+            title: searchField,
           ),
-        ),
-      ],
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+              child: contentColumn,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

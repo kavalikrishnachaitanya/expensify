@@ -11,7 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// A custom HTTP client that injects Google Sign-In auth headers and provides offline local caching.
 class GoogleDriveService {
-  GoogleDriveService();
+  static final GoogleDriveService _instance = GoogleDriveService._internal();
+  factory GoogleDriveService() => _instance;
+  GoogleDriveService._internal();
 
   GoogleSignInAccount? _currentUser;
   GoogleSignInClientAuthorization? _authorization;
@@ -32,6 +34,38 @@ class GoogleDriveService {
   String? get userPhotoUrl => _currentUser?.photoUrl ?? FirebaseAuth.instance.currentUser?.photoURL;
 
   static bool _isInitialized = false;
+
+  static final Map<String, String> _memoryCache = {};
+
+  Future<void> _setSafeString(String key, String value) async {
+    _memoryCache[key] = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, value);
+    } catch (_) {}
+  }
+
+  Future<String?> _getSafeString(String key) async {
+    if (_memoryCache.containsKey(key)) {
+      return _memoryCache[key];
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final val = prefs.getString(key);
+      if (val != null) _memoryCache[key] = val;
+      return val;
+    } catch (_) {
+      return _memoryCache[key];
+    }
+  }
+
+  Future<void> _removeSafeString(String key) async {
+    _memoryCache.remove(key);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    } catch (_) {}
+  }
 
   /// Helper to initialize GoogleSignIn singleton safely once
   static Future<void> ensureInitialized() async {
@@ -87,9 +121,8 @@ class GoogleDriveService {
 
     if (kIsWeb) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString(_keyDriveToken);
-        final expiryStr = prefs.getString(_keyDriveExpiry);
+        final token = await _getSafeString(_keyDriveToken);
+        final expiryStr = await _getSafeString(_keyDriveExpiry);
 
         if (token != null && expiryStr != null) {
           final expiry = DateTime.tryParse(expiryStr);
@@ -110,10 +143,7 @@ class GoogleDriveService {
         debugPrint('Error restoring saved web drive token: $e');
       }
 
-      // Check active Firebase Auth user session or cached data
-      if (FirebaseAuth.instance.currentUser != null) {
-        return true;
-      }
+      return _driveApi != null;
     }
 
     return false;
@@ -140,9 +170,6 @@ class GoogleDriveService {
           
           if (accessToken != null && accessToken.isNotEmpty) {
             final expiry = DateTime.now().toUtc().add(const Duration(hours: 1));
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString(_keyDriveToken, accessToken);
-            await prefs.setString(_keyDriveExpiry, expiry.toIso8601String());
 
             final authClient = auth.authenticatedClient(
               http.Client(),
@@ -153,22 +180,21 @@ class GoogleDriveService {
               ),
             );
             _driveApi = drive.DriveApi(authClient);
+
+            await _setSafeString(_keyDriveToken, accessToken);
+            await _setSafeString(_keyDriveExpiry, expiry.toIso8601String());
           }
-          return true;
+          return _driveApi != null;
         }
       } catch (fbErr) {
         debugPrint('Firebase popup sign-in notice: $fbErr');
-        if (FirebaseAuth.instance.currentUser != null) {
+        if (_driveApi != null) {
           return true;
         }
         lastError = fbErr.toString();
       }
 
-      if (FirebaseAuth.instance.currentUser != null) {
-        return true;
-      }
-      lastError ??= 'Sign in was canceled or could not be completed.';
-      return false;
+      return _driveApi != null;
     }
 
     // 2. On Mobile/Desktop: Try GoogleSignIn authenticate
@@ -202,13 +228,10 @@ class GoogleDriveService {
     try {
       await FirebaseAuth.instance.signOut();
     } catch (_) {}
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_keyDriveToken);
-      await prefs.remove(_keyDriveExpiry);
-      await prefs.remove(_keyLocalCache);
-      await prefs.remove(_keyAvatarCache);
-    } catch (_) {}
+    await _removeSafeString(_keyDriveToken);
+    await _removeSafeString(_keyDriveExpiry);
+    await _removeSafeString(_keyLocalCache);
+    await _removeSafeString(_keyAvatarCache);
     _currentUser = null;
     _authorization = null;
     _driveApi = null;
@@ -245,29 +268,24 @@ class GoogleDriveService {
 
   /// Cache expenses JSON locally in persistent storage.
   Future<void> cacheData(String jsonString) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyLocalCache, jsonString);
-    } catch (e) {
-      debugPrint('Error caching expenses data: $e');
-    }
+    await _setSafeString(_keyLocalCache, jsonString);
   }
 
   /// Get locally cached expenses JSON.
   Future<String?> getCachedData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_keyLocalCache);
-    } catch (e) {
-      debugPrint('Error getting cached expenses: $e');
-      return null;
-    }
+    return _getSafeString(_keyLocalCache);
   }
 
   /// Upload the JSON string to the appDataFolder and cache locally.
   Future<bool> uploadData(String jsonString) async {
     await cacheData(jsonString);
-    if (_driveApi == null) return false;
+    if (_driveApi == null) {
+      await signInSilently();
+    }
+    if (_driveApi == null) {
+      debugPrint('Google Drive API not connected, data cached locally.');
+      return false;
+    }
 
     try {
       final fileId = await _getFileId(_backupFileName);
@@ -289,9 +307,29 @@ class GoogleDriveService {
           uploadMedia: media,
         );
       }
+      debugPrint('✓ Successfully uploaded latest backup to Google Drive appDataFolder!');
       return true;
     } catch (e) {
-      debugPrint('Upload failed: $e');
+      debugPrint('Upload to Google Drive failed: $e. Retrying with token refresh...');
+      try {
+        final refreshed = await signInSilently();
+        if (refreshed && _driveApi != null) {
+          final fileId = await _getFileId(_backupFileName);
+          final content = utf8.encode(jsonString);
+          final media = drive.Media(Stream.value(content), content.length);
+          final driveFile = drive.File()..name = _backupFileName;
+          if (fileId != null) {
+            await _driveApi!.files.update(driveFile, fileId, uploadMedia: media);
+          } else {
+            driveFile.parents = ['appDataFolder'];
+            await _driveApi!.files.create(driveFile, uploadMedia: media);
+          }
+          debugPrint('✓ Upload to Google Drive succeeded on retry!');
+          return true;
+        }
+      } catch (retryErr) {
+        debugPrint('Retry upload failed: $retryErr');
+      }
       return false;
     }
   }
@@ -299,12 +337,17 @@ class GoogleDriveService {
   /// Download the JSON string from the appDataFolder (or local cache).
   Future<String?> downloadData() async {
     if (_driveApi == null) {
+      await signInSilently();
+    }
+    if (_driveApi == null) {
+      debugPrint('Google Drive API not connected in downloadData, loading cached data.');
       return getCachedData();
     }
 
     try {
       final fileId = await _getFileId(_backupFileName);
       if (fileId == null) {
+        debugPrint('No remote backup file found in Google Drive appDataFolder, loading cache.');
         return getCachedData();
       }
 
@@ -317,20 +360,40 @@ class GoogleDriveService {
       final decoded = utf8.decode(bytes);
       if (decoded.isNotEmpty) {
         await cacheData(decoded);
+        debugPrint('✓ Successfully downloaded fresh backup from Google Drive!');
+        return decoded;
       }
-      return decoded;
+      return getCachedData();
     } catch (e) {
-      debugPrint('Download failed: $e');
+      debugPrint('Download from Google Drive failed: $e. Retrying with token refresh...');
+      try {
+        final refreshed = await signInSilently();
+        if (refreshed && _driveApi != null) {
+          final fileId = await _getFileId(_backupFileName);
+          if (fileId != null) {
+            final response = await _driveApi!.files.get(
+              fileId,
+              downloadOptions: drive.DownloadOptions.fullMedia,
+            ) as drive.Media;
+            final bytes = await response.stream.expand((e) => e).toList();
+            final decoded = utf8.decode(bytes);
+            if (decoded.isNotEmpty) {
+              await cacheData(decoded);
+              debugPrint('✓ Download from Google Drive succeeded on retry!');
+              return decoded;
+            }
+          }
+        }
+      } catch (retryErr) {
+        debugPrint('Retry download failed: $retryErr');
+      }
       return getCachedData();
     }
   }
 
   /// Backup profile avatar string/base64 to appDataFolder on Google Drive and local cache
   Future<bool> uploadAvatarData(String avatarStr) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyAvatarCache, avatarStr);
-    } catch (_) {}
+    await _setSafeString(_keyAvatarCache, avatarStr);
 
     if (_driveApi == null) return false;
     try {
@@ -356,18 +419,12 @@ class GoogleDriveService {
   /// Download cached profile avatar from Google Drive or local cache
   Future<String?> downloadAvatarData() async {
     if (_driveApi == null) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        return prefs.getString(_keyAvatarCache);
-      } catch (_) {
-        return null;
-      }
+      return _getSafeString(_keyAvatarCache);
     }
     try {
       final fileId = await _getFileId(_avatarFileName);
       if (fileId == null) {
-        final prefs = await SharedPreferences.getInstance();
-        return prefs.getString(_keyAvatarCache);
+        return _getSafeString(_keyAvatarCache);
       }
 
       final response = await _driveApi!.files.get(
@@ -378,24 +435,19 @@ class GoogleDriveService {
       final bytes = await response.stream.expand((e) => e).toList();
       final decoded = utf8.decode(bytes);
       if (decoded.isNotEmpty) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_keyAvatarCache, decoded);
+        await _setSafeString(_keyAvatarCache, decoded);
       }
       return decoded;
     } catch (e) {
       debugPrint('Avatar download from Drive failed: $e');
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_keyAvatarCache);
+      return _getSafeString(_keyAvatarCache);
     }
   }
 
   /// Delete ALL backup data & files from appDataFolder in Google Drive and local cache
   Future<bool> deleteAllData() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_keyLocalCache);
-      await prefs.remove(_keyAvatarCache);
-    } catch (_) {}
+    await _removeSafeString(_keyLocalCache);
+    await _removeSafeString(_keyAvatarCache);
 
     if (_driveApi == null) return true;
 

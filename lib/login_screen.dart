@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'services/google_drive_service.dart';
 import 'main.dart'; // To navigate to the main app
 
@@ -26,16 +25,11 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _checkExistingLogin();
-    FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null && mounted && !_isNavigating) {
-        _navigateToHome(isGuest: false);
-      }
-    });
   }
 
   Future<void> _checkExistingLogin() async {
     final success = await _driveService.signInSilently();
-    if (success || FirebaseAuth.instance.currentUser != null) {
+    if (success && _driveService.isDriveConnected) {
       _navigateToHome(isGuest: false);
     } else {
       if (mounted) {
@@ -53,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
     
     final success = await _driveService.signIn();
     
-    if (success || FirebaseAuth.instance.currentUser != null) {
+    if (success && _driveService.isDriveConnected) {
       _navigateToHome(isGuest: false);
     } else {
       if (mounted) {
@@ -62,7 +56,10 @@ class _LoginScreenState extends State<LoginScreen> {
         });
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sign in failed. Please try again.')),
+          SnackBar(
+            content: Text(_driveService.lastError ?? 'Sign in failed. Please try again.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     }

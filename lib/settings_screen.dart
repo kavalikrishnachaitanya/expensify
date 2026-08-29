@@ -30,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
   final GoogleDriveService driveService;
   final bool isGuestMode;
+  final VoidCallback? onOpenCreditCards;
 
   const SettingsScreen({
     super.key,
@@ -45,6 +46,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.driveService,
     this.isGuestMode = false,
+    this.onOpenCreditCards,
   });
 
   @override
@@ -663,27 +665,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Builder(
                         builder: (ctx) {
-                          final isDark =
-                              Theme.of(ctx).brightness == Brightness.dark;
+                          final themeProvider = ctx.watch<ThemeProvider>();
+                          final currentMode = themeProvider.themeMode;
 
-                          return ListTile(
-                            leading: Icon(
-                              isDark
-                                  ? Icons.nightlight_round
-                                  : Icons.wb_sunny_rounded,
-                              color: theme.colorScheme.primary,
-                            ),
-                            title: const Text(
-                              'Dark Mode',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            trailing: Switch(
-                              value: isDark,
-                              onChanged: (val) {
-                                try {
-                                  ctx.read<ThemeProvider>().toggleTheme();
-                                } catch (_) {}
-                              },
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      currentMode == ThemeMode.system
+                                          ? Icons.brightness_auto_rounded
+                                          : currentMode == ThemeMode.dark
+                                              ? Icons.nightlight_round
+                                              : Icons.wb_sunny_rounded,
+                                      color: theme.colorScheme.primary,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    const Text(
+                                      'App Theme',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: SegmentedButton<ThemeMode>(
+                                    segments: const [
+                                      ButtonSegment<ThemeMode>(
+                                        value: ThemeMode.system,
+                                        icon: Icon(Icons.brightness_auto_rounded, size: 16),
+                                        label: Text('System'),
+                                      ),
+                                      ButtonSegment<ThemeMode>(
+                                        value: ThemeMode.light,
+                                        icon: Icon(Icons.light_mode_rounded, size: 16),
+                                        label: Text('Light'),
+                                      ),
+                                      ButtonSegment<ThemeMode>(
+                                        value: ThemeMode.dark,
+                                        icon: Icon(Icons.dark_mode_rounded, size: 16),
+                                        label: Text('Dark'),
+                                      ),
+                                    ],
+                                    selected: {currentMode},
+                                    onSelectionChanged: (newSelection) {
+                                      ctx.read<ThemeProvider>().setThemeMode(newSelection.first);
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -711,6 +746,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                       ),
+                      if (widget.onOpenCreditCards != null) ...[
+                        const Divider(height: 1),
+                        ListTile(
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onOpenCreditCards!();
+                          },
+                          leading: Icon(
+                            Icons.credit_card_rounded,
+                            color: theme.colorScheme.primary,
+                          ),
+                          title: const Text(
+                            'Credit Cards Tracker',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text(
+                            'Manage cards, track dues & bill payments',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ],
                       const Divider(height: 1),
                       ListTile(
                         leading: Icon(

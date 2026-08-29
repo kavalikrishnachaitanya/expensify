@@ -530,7 +530,12 @@ class _SavingsVaultViewState extends State<SavingsVaultView> {
       );
 
     return SingleChildScrollView(
-      padding: EdgeInsets.all(widget.isWideScreen ? 24 : 16),
+      padding: EdgeInsets.fromLTRB(
+        widget.isWideScreen ? 24 : 16,
+        widget.isWideScreen ? 24 : 16,
+        widget.isWideScreen ? 24 : 16,
+        widget.isWideScreen ? 24 : 96,
+      ),
       child: content,
     );
   }

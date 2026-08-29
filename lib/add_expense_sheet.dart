@@ -7,6 +7,7 @@ class AddExpenseSheet extends StatefulWidget {
   final List<ExpenseCategory> categories;
   final String currencySymbol;
   final Expense? expenseToEdit;
+  final List<CreditCard> creditCards;
   final Function(Expense) onAddExpense;
 
   const AddExpenseSheet({
@@ -14,6 +15,7 @@ class AddExpenseSheet extends StatefulWidget {
     required this.categories,
     required this.currencySymbol,
     this.expenseToEdit,
+    this.creditCards = const [],
     required this.onAddExpense,
   });
 
@@ -29,6 +31,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
 
   late String _selectedCategoryId;
   PaymentMethod _selectedPaymentMethod = PaymentMethod.creditCard;
+  String? _selectedCreditCardId;
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -41,9 +44,13 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       _noteController.text = exp.note ?? '';
       _selectedCategoryId = exp.categoryId;
       _selectedPaymentMethod = exp.paymentMethod;
+      _selectedCreditCardId = exp.creditCardId;
       _selectedDate = exp.date;
     } else {
       _selectedCategoryId = widget.categories.isNotEmpty ? widget.categories.first.id : '';
+      if (widget.creditCards.isNotEmpty) {
+        _selectedCreditCardId = widget.creditCards.first.id;
+      }
     }
   }
 
@@ -82,6 +89,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       paymentMethod: _selectedPaymentMethod,
       note: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
       linkedTransactionId: widget.expenseToEdit?.linkedTransactionId,
+      creditCardId: _selectedPaymentMethod == PaymentMethod.creditCard ? _selectedCreditCardId : null,
     );
 
     Navigator.of(context).pop();
@@ -180,6 +188,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                        LengthLimitingTextInputFormatter(10),
                       ],
                       style: TextStyle(
                         fontSize: 28,
@@ -299,6 +308,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               children: PaymentMethod.values.map((pm) {
                 final isSelected = _selectedPaymentMethod == pm;
                 return ChoiceChip(
+                  showCheckmark: false,
                   avatar: Icon(
                     pm.icon,
                     size: 16,
@@ -316,6 +326,29 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                 );
               }).toList(),
             ),
+            if (_selectedPaymentMethod == PaymentMethod.creditCard && widget.creditCards.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: widget.creditCards.any((c) => c.id == _selectedCreditCardId)
+                    ? _selectedCreditCardId
+                    : widget.creditCards.first.id,
+                decoration: InputDecoration(
+                  labelText: 'Select Credit Card',
+                  prefixIcon: const Icon(Icons.credit_card_rounded),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                items: widget.creditCards.map((c) {
+                  return DropdownMenuItem(
+                    value: c.id,
+                    child: Text('${c.bankName} ${c.cardName} (•••• ${c.last4Digits})'),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  setState(() => _selectedCreditCardId = val);
+                },
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Date Picker Row
